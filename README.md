@@ -5,14 +5,12 @@
 ![Saloon](https://img.shields.io/badge/saloon-v3.10%2B%20%7C%20v4-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-A [Saloon](https://docs.saloon.dev) plugin that logs every HTTP request your app sends and every response it gets back. The log entries are **structured and redacted**, and work with any PSR-3 logger.
-
-Add one trait to a connector and every call to that API is logged: the request, the response, how long it took, and any connection failure. Secrets and card data are masked, and large or binary payloads are handled safely. Bodies can be JSON, XML/SOAP, form data, multipart uploads, text, HTML, files or streams.
+A [Saloon](https://docs.saloon.dev) plugin that automatically logs every HTTP request your application sends and every response it receives. The log entries are structured, secrets are masked, and they work with any PSR-3 logger (Laravel, Monolog, …).
 
 ```php
 class RatehawkConnector extends Connector
 {
-    use HasLogging;
+    use HasLogging;   // ← that's all
 }
 ```
 
@@ -20,19 +18,18 @@ class RatehawkConnector extends Connector
 
 ## Table of contents
 
-- [Why](#why)
-- [Features](#features)
+- [What this package provides](#what-this-package-provides)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Quick start](#quick-start)
-- [What a log entry looks like](#what-a-log-entry-looks-like)
-- [Adding context (supplier, client, action…)](#adding-context)
+- [The default log entries](#the-default-log-entries)
+- [Adding your own properties](#adding-your-own-properties)
+- [Masking secrets](#masking-secrets)
+- [Large bodies: what happens](#large-bodies-what-happens)
+- [How each body type is logged](#how-each-body-type-is-logged)
 - [Configuration](#configuration)
 - [Customising per connector or request](#customising-per-connector-or-request)
 - [Log messages and levels](#log-messages-and-levels)
-- [How bodies are logged](#how-bodies-are-logged)
-- [Redaction](#redaction)
-- [Size limits](#size-limits)
 - [Failures, retries, async and pools](#failures-retries-async-and-pools)
 - [Testing your application](#testing-your-application)
 - [Custom body formatters](#custom-body-formatters)
@@ -44,32 +41,26 @@ class RatehawkConnector extends Connector
 
 ---
 
-## Why
+## What this package provides
 
-When you integrate with suppliers, "what exactly did we send, and what did they answer?" is the question you ask most often. Logging by hand in every connector tends to go wrong in the same ways:
+Add `use HasLogging;` to a Saloon connector (or to a single request), and every HTTP call it makes writes:
 
-- log formats differ between projects and connectors,
-- tokens, passwords or card numbers end up in the logs,
-- a 5 MB XML response or a PDF download blows up the log entry (Google Cloud Logging rejects entries above 256 KB),
-- reading the response stream for logging leaves the application with an empty body.
+| # | Entry | When |
+|---|---|---|
+| 1 | **Request entry** | Right before the request is sent. Authentication and all middleware have already run, so it shows exactly what goes out |
+| 2 | **Response entry** | When the response arrives, including the response time |
+| 3 | **Failure entry** | Instead of #2 when no response arrives (timeout, DNS, TLS, connection refused) |
 
-This package solves all of these once, as a [Saloon plugin](https://docs.saloon.dev/installable-plugins/building-your-own-plugins).
+Along the way the package:
 
-## Features
+- **Masks secrets** such as tokens, passwords, API keys and card data in headers, query parameters and bodies. See [Masking secrets](#masking-secrets).
+- **Understands every body type.** JSON is decoded into searchable fields, XML stays readable, form data is parsed, and files and binary data are replaced by a short description. See [How each body type is logged](#how-each-body-type-is-logged).
+- **Protects your logs and memory.** Huge bodies are cut or skipped instead of crashing the logger or your log backend. See [Large bodies](#large-bodies-what-happens).
+- **Links request and response** through a shared `correlation_id`.
+- **Lets you add your own properties** (`supplier`, `client`, `action`, …). See [Adding your own properties](#adding-your-own-properties).
+- **Stays out of your way.** Your code can still read the response body, and a problem inside the logger never breaks the HTTP call.
 
-- **One trait, zero boilerplate.** Add `HasLogging` to a connector or a single request.
-- **Two correlated entries per call.** The request and the response share a `correlation_id`.
-- **Response time** in seconds on every response.
-- **Content-aware bodies.** JSON is decoded into searchable fields. XML/SOAP, form, multipart, text and binary each get an appropriate representation.
-- **Redaction** of headers, query parameters, body fields, XML elements and attributes, and URL credentials.
-- **Size limits.** Bodies are truncated *after* redaction. Huge bodies are never loaded into memory.
-- **Stream-safe.** Streams are rewound after reading. Non-seekable streams are never touched.
-- **Failures are logged** (timeouts, DNS, connection refused) with the original exception.
-- **Your context** (`supplier`, `client`, `api`, `action`, …) is added to every entry.
-- **Per-connector/request overrides** for messages, logger/channel, redaction and bodies, or turning logging off.
-- **Never breaks your HTTP call.** Errors inside the logger are caught and reported.
-- **Laravel integration** (auto-discovery, publishable config). The core works in any framework.
-- Supports **Saloon v3.10+ and v4**, **PHP 8.2+**, sync, async, pools and retries.
+It works with Saloon v3.10+ and v4, sync and async requests, pools, retries and `MockClient`, in Laravel or any other framework.
 
 ## Requirements
 
@@ -77,57 +68,53 @@ This package solves all of these once, as a [Saloon plugin](https://docs.saloon.
 |---|---|
 | PHP | 8.2 or higher |
 | Saloon | `^3.10` or `^4.0` |
-| Logger | Any PSR-3 logger (Laravel, Monolog, Symfony, …) |
+| Logger | Any PSR-3 logger |
 | Laravel (optional) | 11 or 12 |
 
 ## Installation
 
-The package is installed straight from GitHub. Add the repository to your application's `composer.json`:
+The package is installed from GitHub. Add the repository to your application's `composer.json`:
 
 ```json
 {
     "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/milzer/saloon-logger"
-        }
+        { "type": "vcs", "url": "https://github.com/milzer/saloon-logger" }
     ]
 }
 ```
 
-Then require it:
+Then install it:
 
 ```bash
 composer require milzer/saloon-logger
 ```
 
-Composer installs the latest tagged release (see [Releasing a new version](#releasing-a-new-version)). To use the unreleased `main` branch, require `milzer/saloon-logger:dev-main`.
+Composer installs the latest tagged release. To use the unreleased `main` branch, require `milzer/saloon-logger:dev-main`.
 
-### Private repository
+### If the repository is private
 
-If the repository is private, Composer needs a GitHub token with read access to it:
+Composer needs a GitHub token with read access:
 
-1. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens) with **Contents: Read-only** access to the repository.
-2. Register it with Composer, either locally (stored in `~/.composer/auth.json`) or in CI:
+1. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens) with **Contents: Read-only** on this repository.
+2. Register it with Composer on your machine:
 
 ```bash
 composer config --global github-oauth.github.com <your-token>
 ```
 
-In CI (e.g. GitHub Actions or Cloud Build), set the `COMPOSER_AUTH` environment variable instead:
+In CI, set the `COMPOSER_AUTH` environment variable instead:
 
 ```bash
 COMPOSER_AUTH='{"github-oauth":{"github.com":"<your-token>"}}'
 ```
 
-Never commit the token or an `auth.json` file to your application's repository.
+Never commit the token or an `auth.json` file.
 
 ## Quick start
 
 ### Laravel
 
-1. Install the package. The service provider is auto-discovered.
-2. Add the plugin to your connector:
+The service provider is auto-discovered, so you only add the plugin:
 
 ```php
 use Milzer\SaloonLogger\Plugins\HasLogging;
@@ -144,13 +131,9 @@ class RatehawkConnector extends Connector
 }
 ```
 
-3. Done. Entries go to your default log channel. To use another channel:
+Entries go to your default log channel. To use another channel, set `SALOON_LOGGER_CHANNEL=suppliers` in `.env`.
 
-```dotenv
-SALOON_LOGGER_CHANNEL=suppliers
-```
-
-To change the defaults, publish the config file:
+To change other defaults, publish the config file:
 
 ```bash
 php artisan vendor:publish --tag=saloon-logger-config
@@ -161,105 +144,138 @@ php artisan vendor:publish --tag=saloon-logger-config
 Register a default logger once during bootstrap, then use the trait the same way:
 
 ```php
-use Milzer\SaloonLogger\LoggingOptions;
 use Milzer\SaloonLogger\SaloonLogger;
 
-SaloonLogger::setDefault(new SaloonLogger(
-    $psrLogger,                                  // any Psr\Log\LoggerInterface, e.g. Monolog
-    new LoggingOptions(context: ['project' => 'checkout']),
-));
+SaloonLogger::setDefault(new SaloonLogger($psrLogger));   // any Psr\Log\LoggerInterface
 ```
 
-If you use the plugin without registering a logger, you get a clear `MissingLoggerException` on the first request.
+---
 
-## What a log entry looks like
+## The default log entries
 
-Each call produces **two entries**, one for the request and one for the response. This is how they look in Google Cloud Logging when written by Laravel's JSON formatter (`jsonPayload.context`):
+This is what you get **out of the box**, with no extra configuration. The example is a booking request to a supplier.
 
-**Request** (`message: "saloon-request"`)
+Every entry is a normal PSR-3 call: `$logger->log($level, $message, $context)`. The blocks below show the **context**. In Google Cloud Logging, written through Laravel's JSON formatter, it appears as `jsonPayload.context`.
+
+### Request entry
+
+`level: info` · `message: "saloon-request"`
 
 ```json
 {
-  "project": "checkout",
-  "client": "explorer-fernreisen",
-  "supplier": "ratehawk",
-  "api": "accommodations",
-  "action": "search",
   "http": {
     "method": "POST",
-    "url": "https://api.ratehawk.com/v1/accommodations/search",
-    "queries": { "lang": "de", "api_key": "[REDACTED]" },
+    "url": "https://api.supplier.com/v1/bookings",
+    "queries": {
+      "lang": "de",
+      "api_key": "[REDACTED]"
+    },
     "headers": {
-      "Authorization": "[REDACTED]",
+      "Content-Type": "application/json",
       "Accept": "application/json",
-      "Content-Type": "application/json"
+      "X-Api-Key": "[REDACTED]",
+      "Authorization": "[REDACTED]"
     },
     "body": {
-      "destination": "Mallorca",
-      "guests": [{ "name": "Jane" }],
-      "payment": { "cardNumber": "[REDACTED]", "cvv": "[REDACTED]", "holder": "Jane Doe" }
+      "hotel_id": "H1",
+      "guest": { "name": "Jane Doe", "email": "jane@example.com" },
+      "payment": { "cardNumber": "[REDACTED]", "expiry": "12/29", "cvv": "[REDACTED]" }
     }
   },
-  "correlation_id": "21200c57ff98fa8e",
+  "correlation_id": "a0b039ed3d0677b5",
   "saloon": {
-    "connector": "App\\Http\\Integrations\\Ratehawk\\RatehawkConnector",
-    "request": "App\\Http\\Integrations\\Ratehawk\\Requests\\SearchAccommodationsRequest"
+    "connector": "App\\Http\\Integrations\\Supplier\\SupplierConnector",
+    "request": "App\\Http\\Integrations\\Supplier\\Requests\\CreateBookingRequest"
   }
 }
 ```
 
-**Response** (`message: "saloon-response"`)
+### Response entry
+
+`level: info` (1xx–3xx), `warning` (4xx) or `error` (5xx) · `message: "saloon-response"`
 
 ```json
 {
-  "project": "checkout",
-  "client": "explorer-fernreisen",
-  "supplier": "ratehawk",
-  "api": "accommodations",
-  "action": "search",
   "http": {
     "method": "POST",
-    "url": "https://api.ratehawk.com/v1/accommodations/search",
-    "status": 200,
-    "headers": { "Content-Type": "application/json", "Date": "Wed, 23 Sep 2026 15:01:16 GMT" },
+    "url": "https://api.supplier.com/v1/bookings",
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json",
+      "Date": "Wed, 23 Sep 2026 15:01:16 GMT"
+    },
     "body": {
-      "notifications": [],
-      "offers": [{ "id": "H1", "price": 99.5 }],
-      "paging": { "page": 1, "size": 6, "total": 6 }
+      "booking_id": "B-123",
+      "status": "confirmed",
+      "access_token": "[REDACTED]"
     }
   },
   "response_time_in_seconds": 2.16,
-  "correlation_id": "21200c57ff98fa8e",
+  "correlation_id": "a0b039ed3d0677b5",
+  "saloon": {
+    "connector": "App\\Http\\Integrations\\Supplier\\SupplierConnector",
+    "request": "App\\Http\\Integrations\\Supplier\\Requests\\CreateBookingRequest"
+  }
+}
+```
+
+The request and response share the same `correlation_id`. To see both entries of one call in Cloud Logging:
+
+```
+jsonPayload.context.correlation_id="a0b039ed3d0677b5"
+```
+
+### Failure entry
+
+`level: error` · `message: "saloon-failure"`. It replaces the response entry when no response arrives.
+
+```json
+{
+  "http": {
+    "method": "POST",
+    "url": "https://api.supplier.com/v1/bookings"
+  },
+  "response_time_in_seconds": 30.004,
+  "error": {
+    "type": "GuzzleHttp\\Exception\\ConnectException",
+    "message": "cURL error 28: Operation timed out after 30001 milliseconds",
+    "code": 0
+  },
+  "exception": "(the original exception object; Laravel/Monolog render it with its stack trace)",
+  "correlation_id": "a0b039ed3d0677b5",
   "saloon": { "connector": "…", "request": "…" }
 }
 ```
 
-To find both entries of one call in Cloud Logging:
+### Default properties at a glance
 
-```
-jsonPayload.context.correlation_id="21200c57ff98fa8e"
-```
+| Property | Request | Response | Failure | Description |
+|---|:-:|:-:|:-:|---|
+| `http.method` | ✓ | ✓ | ✓ | HTTP method |
+| `http.url` | ✓ | ✓ | ✓ | URL without query string and without `user:pass@` |
+| `http.queries` | ✓ | | | Query parameters, masked |
+| `http.headers` | ✓ | ✓ | | Headers, masked. A single value is shown as a string |
+| `http.body` | ✓ | ✓ | | Body. See [How each body type is logged](#how-each-body-type-is-logged) |
+| `http.status` | | ✓ | | Status code |
+| `response_time_in_seconds` | | ✓ | ✓ | Duration, 3 decimals |
+| `error.type` / `.message` / `.code` | | | ✓ | What went wrong |
+| `exception` | | | ✓ | Original exception, for stack traces and error reporting |
+| `correlation_id` | ✓ | ✓ | ✓ | Random id shared by the entries of one call |
+| `saloon.connector` / `.request` | ✓ | ✓ | ✓ | Classes that made the call |
+| `mocked` | | only if true | | Response came from Saloon's `MockClient` |
+| `cached` | | only if true | | Response came from Saloon's cache plugin |
 
-### Fields set by the package
+You can switch off headers or bodies (see [Configuration](#configuration)). The other properties are always present.
 
-| Field | In | Description |
-|---|---|---|
-| `http.method`, `http.url` | all | HTTP method and URL without query string or credentials |
-| `http.queries` | request | Query parameters (redacted) |
-| `http.headers` | request, response | Headers (redacted). Single values are collapsed to strings |
-| `http.body` | request, response | Body; see [How bodies are logged](#how-bodies-are-logged) |
-| `http.status` | response | HTTP status code |
-| `response_time_in_seconds` | response, failure | Time between sending and receiving |
-| `correlation_id` | all | Random id shared by the entries of one exchange |
-| `saloon.connector`, `saloon.request` | all | Fully qualified class names |
-| `error`, `exception` | failure | Error type/message/code and the original exception |
-| `mocked`, `cached` | response | Present (`true`) only for `MockClient` / cached responses |
+---
 
-These keys take precedence over your own context keys of the same name.
+## Adding your own properties
 
-## Adding context
+The default entries describe the HTTP call. Usually you also want **business context**: which supplier, which client, which API and action. You can add any properties you need, and they appear next to `http` in every entry.
 
-Implement `ProvidesLogContext` on the connector and/or the request to add your own fields to every entry:
+### Option 1: per connector and/or request (dynamic)
+
+Implement `ProvidesLogContext` and return an array:
 
 ```php
 use Milzer\SaloonLogger\Contracts\ProvidesLogContext;
@@ -277,7 +293,7 @@ class RatehawkConnector extends Connector implements ProvidesLogContext
     {
         return [
             'supplier' => 'ratehawk',
-            'client' => $this->client,
+            'client' => $this->client,          // e.g. "explorer-fernreisen"
         ];
     }
 }
@@ -290,55 +306,305 @@ use Saloon\Http\Request;
 
 class SearchAccommodationsRequest extends Request implements ProvidesLogContext
 {
+    public function __construct(private readonly string $bookingReference) {}
+
     public function logContext(PendingRequest $pendingRequest): array
     {
-        return ['api' => 'accommodations', 'action' => 'search'];
+        return [
+            'api' => 'accommodations',
+            'action' => 'search',
+            'booking_reference' => $this->bookingReference,
+        ];
     }
 }
 ```
 
-Context is merged in this order, with later sources winning:
+### Option 2: static properties for every entry (config)
 
-1. `context` from the config (static, e.g. `['project' => 'checkout']`)
-2. the connector's `logContext()`
-3. the request's `logContext()`
+```php
+// config/saloon-logger.php
+'context' => [
+    'project' => 'checkout',
+],
+```
 
-`logContext()` runs once the PendingRequest is fully built, so you can read the final headers, query and body from `$pendingRequest`.
+### Result
+
+Your properties are added to every entry: request, response and failure.
+
+```json
+{
+  "project": "checkout",
+  "supplier": "ratehawk",
+  "client": "explorer-fernreisen",
+  "api": "accommodations",
+  "action": "search",
+  "booking_reference": "BK-2026-0042",
+  "http": { "method": "POST", "url": "…", "status": 200, "headers": { … }, "body": { … } },
+  "response_time_in_seconds": 2.16,
+  "correlation_id": "a0b039ed3d0677b5",
+  "saloon": { … }
+}
+```
+
+### Rules
+
+- **Merge order:** config `context` → connector `logContext()` → request `logContext()`. Later sources win on the same key, and nested arrays are merged.
+- **Values:** anything JSON-serialisable (strings, numbers, booleans, arrays).
+- **Reserved names:** `http`, `response_time_in_seconds`, `correlation_id`, `saloon`, `error`, `exception`, `mocked` and `cached` are set by the package and always win. Pick different names for your own properties.
+- **Timing:** `logContext()` runs once the request is fully built, so you can read the final headers, query or body from `$pendingRequest`.
+- **Messages:** your scalar properties can be used as placeholders in messages, e.g. `checkout-to-{supplier}`. See [Log messages and levels](#log-messages-and-levels).
+
+---
+
+## Masking secrets
+
+Logs are read by many people and kept for a long time, so secrets must never end up in them. Before anything is written, the package replaces the **value** of every sensitive field with `[REDACTED]`. The field itself stays visible, so you can still tell that it was sent.
+
+### Example: what is sent vs. what is logged
+
+Your application sends this request:
+
+```http
+POST https://api.supplier.com/v1/bookings?lang=de&api_key=sk_live_123
+Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.secret
+X-Api-Key: sk_live_123
+Accept: application/json
+Content-Type: application/json
+
+{
+  "hotel_id": "H1",
+  "guest":   { "name": "Jane Doe", "email": "jane@example.com" },
+  "payment": { "cardNumber": "4111111111111111", "expiry": "12/29", "cvv": "123" },
+  "user":    { "login": "jane", "password": "hunter2" }
+}
+```
+
+The log entry contains:
+
+```json
+{
+  "http": {
+    "method": "POST",
+    "url": "https://api.supplier.com/v1/bookings",
+    "queries": { "lang": "de", "api_key": "[REDACTED]" },
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "X-Api-Key": "[REDACTED]",
+      "Authorization": "[REDACTED]"
+    },
+    "body": {
+      "hotel_id": "H1",
+      "guest":   { "name": "Jane Doe", "email": "jane@example.com" },
+      "payment": { "cardNumber": "[REDACTED]", "expiry": "12/29", "cvv": "[REDACTED]" },
+      "user":    { "login": "jane", "password": "[REDACTED]" }
+    }
+  }
+}
+```
+
+The same applies to the response. A body like `{"booking_id": "B-123", "access_token": "tok_abc"}` is logged as `{"booking_id": "B-123", "access_token": "[REDACTED]"}`.
+
+It also works for **XML / SOAP**. This body:
+
+```xml
+<Envelope><Auth user="jane" password="hunter2"/><CardNumber>4111111111111111</CardNumber><Hotel>H1</Hotel></Envelope>
+```
+
+is logged as:
+
+```xml
+<Envelope><Auth user="jane" password="[REDACTED]"/><CardNumber>[REDACTED]</CardNumber><Hotel>H1</Hotel></Envelope>
+```
+
+It also covers **form data** (`client_secret=shh` → `client_secret=[REDACTED]`), **multipart** fields, and **credentials in the URL** (`https://user:pass@api.supplier.com` is logged as `https://api.supplier.com`).
+
+### What is masked by default
+
+| Where | Names |
+|---|---|
+| Headers | `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`, `Api-Key`, `X-Auth-Token`, `X-Access-Token`, `X-Csrf-Token`, `X-Xsrf-Token` |
+| Query parameters and body fields | `*password*`, `*secret*`, `*token*`, `api_key`, `apikey`, `private_key`, `authorization`, `card_number`, `cardnumber`, `pan`, `cvv`, `cvv2`, `cvc`, `cvc2`, `security_code`, `iban` |
+
+### How names are matched
+
+- **Case and separators don't matter.** The rule `card_number` matches `card_number`, `cardNumber`, `CardNumber`, `card-number` and `CARD_NUMBER`.
+- **`*` is a wildcard.** `*token*` matches `token`, `access_token`, `refreshToken` and `X-Session-Token`. `*password*` matches `password`, `new_password` and `passwordConfirmation`.
+- **At any depth.** Fields are found no matter how deeply they are nested in JSON, and in every item of a list.
+- **Whole value.** If a matching field contains an object, the whole object is replaced.
+
+### Adding your own names
+
+Globally, in the config. Extend the defaults rather than replacing them:
+
+```php
+// config/saloon-logger.php
+use Milzer\SaloonLogger\LoggingOptions;
+
+'redact' => [
+    'headers' => [...LoggingOptions::DEFAULT_REDACTED_HEADERS, 'x-signature'],
+    'keys'    => [...LoggingOptions::DEFAULT_REDACTED_KEYS, 'passport_number', 'date_of_birth'],
+    'mask'    => '[REDACTED]',
+],
+```
+
+Or for one connector or request only:
+
+```php
+public function configureLogging(LoggingOptions $options, PendingRequest $pendingRequest): LoggingOptions
+{
+    return $options->redactKeys('passport_number')->redactHeaders('X-Signature');
+}
+```
+
+> [!IMPORTANT]
+> **Payment data / PCI:** masking works on field *names*. If a supplier sends card data under a generic name (for example `<Number>` inside `<CreditCard>`), add that name explicitly with `redactKeys('number')`. The safest option for payment requests is not to log the body at all: `$options->withoutRequestBody()`.
+
+---
+
+## Large bodies: what happens
+
+Supplier responses can be huge (a hotel search with thousands of offers), and some responses are files (PDF vouchers). Logging them unchanged would cause two problems:
+
+1. **Your log backend rejects the entry.** Google Cloud Logging, for example, refuses entries larger than **256 KB**, so you would lose the log line completely.
+2. **Your application uses too much memory** reading, decoding and encoding a body of many megabytes, just to log it.
+
+Two limits prevent this:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `max_body_bytes` | **128 KB** | Largest body that is logged in full |
+| `max_parse_bytes` | **5 MB** | Largest body that is read at all |
+
+A body falls into one of three zones:
+
+| Body size | What happens | What you see in `http.body` |
+|---|---|---|
+| **Up to 128 KB** | Read, decoded, masked and logged in full | The normal body, e.g. a JSON object |
+| **128 KB – 5 MB** | Read, decoded and **masked first**, then **cut to 128 KB** | A string ending in `... [truncated, 128 KB of 1.4 MB shown]` |
+| **Over 5 MB** | **Not read at all** | `[body omitted: 12 MB larger than the 5 MB parse limit, application/json]` |
+
+### Zone 1: normal body (up to 128 KB)
+
+Logged as usual:
+
+```json
+"body": { "offers": [ { "id": "H1", "name": "Hotel Palma", "price": 99.5 }, … ], "paging": { "page": 1 } }
+```
+
+### Zone 2: truncated body (128 KB – 5 MB)
+
+Say a search response is 1.4 MB. The package:
+
+1. reads the body (the stream is rewound afterwards, so your code still gets all of it),
+2. decodes the JSON and **masks secrets in the complete body**,
+3. encodes it back to a JSON string and keeps the first 128 KB,
+4. appends a note saying how much was cut.
+
+```json
+"body": "{\"offers\":[{\"id\":\"H1\",\"name\":\"Hotel Palma\",\"price\":99.5},{\"id\":\"H2\",\"name\":\"Hotel Soller\",\"price\":120},{\"id\"... [truncated, 128 KB of 1.4 MB shown]"
+```
+
+Good to know:
+
+- Masking happens **before** cutting, so a secret can never slip through by being cut in half, and nothing after the cut is ever written.
+- A truncated JSON body becomes a **string**, so its fields are no longer individually searchable in the log viewer. The first 128 KB is still readable.
+- Your application is **not affected**. `$response->json()` still returns the full 1.4 MB response. Only the log entry is shortened.
+
+### Zone 3: omitted body (over 5 MB)
+
+The body is never loaded into memory for logging. The entry still has method, URL, status, headers and timing, and the body is replaced by a description:
+
+```json
+"body": "[body omitted: 12 MB larger than the 5 MB parse limit, application/json]"
+```
+
+### Related cases
+
+| Case | `http.body` |
+|---|---|
+| Binary content (PDF, image, zip, …) up to 5 MB | `[binary body omitted: application/pdf, 84 KB]`. Larger ones get the zone 3 message |
+| Uploaded files in a multipart request | `[file omitted: 1.2 MB]` for that part; text fields are still shown |
+| Streamed download (non-seekable stream) | `[body omitted: non-seekable stream]`. Never read, so your download is untouched |
+
+### Changing the limits
+
+In `config/saloon-logger.php`:
+
+```php
+'limits' => [
+    'max_body_bytes'  => 200 * 1024,        // log up to 200 KB; null = never truncate
+    'max_parse_bytes' => 10 * 1024 * 1024,  // read up to 10 MB
+],
+```
+
+Or per connector or request:
+
+```php
+return $options->withMaxBodyBytes(null);     // never truncate for this connector
+return $options->withoutResponseBody();      // don't log the response body at all
+```
+
+> [!TIP]
+> Keep `max_body_bytes` well below your backend's entry limit (256 KB on Google Cloud Logging). Headers, your properties and the rest of the entry need space too.
+
+---
+
+## How each body type is logged
+
+The `Content-Type` header decides how a body is shown. Detection is lenient: JSON sent as `text/html`, or without a content type, is still decoded.
+
+| Content | Shown as |
+|---|---|
+| `application/json`, `*+json` (e.g. `problem+json`) | Decoded object/array, searchable in your log viewer |
+| Malformed JSON | Raw string (still masked) |
+| `application/xml`, `text/xml`, `*+xml` (SOAP) | String, with sensitive elements and attributes masked |
+| `application/x-www-form-urlencoded` | Parsed into fields |
+| Multipart request | One item per part, e.g. `[{"name":"title","contents":"Voucher"},{"name":"file","filename":"voucher.pdf","contents":"[file omitted: 1 KB]"}]` |
+| Text, HTML, CSV, … | String |
+| PDF, images, audio/video, archives, `application/octet-stream`, `application/vnd.*`, invalid UTF-8 | `[binary body omitted: <type>, <size>]` |
+| Non-seekable stream | `[body omitted: non-seekable stream]` |
+| Empty body | `null` |
+
+Reading a body for logging never consumes it: streams are rewound to their original position afterwards.
+
+---
 
 ## Configuration
 
-All options live in `config/saloon-logger.php` (Laravel), or in the `LoggingOptions` constructor (plain PHP).
+In Laravel, all options live in `config/saloon-logger.php`. In plain PHP, pass them to the `LoggingOptions` constructor.
 
-| Config key | `LoggingOptions` argument | Default | Description |
+| Config key | `LoggingOptions` argument | Default | Env |
 |---|---|---|---|
-| `enabled` | `enabled` | `true` | Master switch (`SALOON_LOGGER_ENABLED`) |
-| `channel` | – | `null` | Laravel log channel, `null` = default (`SALOON_LOGGER_CHANNEL`) |
+| `enabled` | `enabled` | `true` | `SALOON_LOGGER_ENABLED` |
+| `channel` | – | `null` (default channel) | `SALOON_LOGGER_CHANNEL` |
 | `messages.request` | `requestMessage` | `saloon-request` | `SALOON_LOGGER_REQUEST_MESSAGE` |
 | `messages.response` | `responseMessage` | `saloon-response` | `SALOON_LOGGER_RESPONSE_MESSAGE` |
 | `messages.failure` | `failureMessage` | `saloon-failure` | `SALOON_LOGGER_FAILURE_MESSAGE` |
 | `levels.request` | `requestLevel` | `info` | |
-| `levels.response` | `responseLevel` | `info` | 1xx–3xx |
-| `levels.client_error` | `clientErrorLevel` | `warning` | 4xx |
-| `levels.server_error` | `serverErrorLevel` | `error` | 5xx |
-| `levels.failure` | `failureLevel` | `error` | Connection errors, timeouts |
-| `log.requests` | `logRequests` | `true` | Log request entries |
-| `log.responses` | `logResponses` | `true` | Log response entries |
-| `log.failures` | `logFailures` | `true` | Log fatal failures |
-| `log.headers` | `logHeaders` | `true` | Include headers |
-| `log.request_body` | `logRequestBody` | `true` | Include request bodies |
-| `log.response_body` | `logResponseBody` | `true` | Include response bodies |
-| `redact.headers` | `redactHeaders` | see [Redaction](#redaction) | Header names to mask |
-| `redact.keys` | `redactKeys` | see [Redaction](#redaction) | Query/body keys to mask |
-| `redact.mask` | `redactionMask` | `[REDACTED]` | Replacement value |
-| `limits.max_body_bytes` | `maxBodyBytes` | `131072` (128 KB) | Truncate larger bodies; `null` = never |
-| `limits.max_parse_bytes` | `maxParseBytes` | `5242880` (5 MB) | Don't read larger bodies at all |
-| `context` | `context` | `[]` | Static context for every entry |
-| `body_formatters` | `bodyFormatters` | `[]` | Extra [body formatters](#custom-body-formatters) |
-| `throw_on_error` | `throwOnError` | `false` | Rethrow logger errors (`SALOON_LOGGER_THROW_ON_ERROR`) |
+| `levels.response` | `responseLevel` | `info` | |
+| `levels.client_error` | `clientErrorLevel` | `warning` | |
+| `levels.server_error` | `serverErrorLevel` | `error` | |
+| `levels.failure` | `failureLevel` | `error` | |
+| `log.requests` | `logRequests` | `true` | |
+| `log.responses` | `logResponses` | `true` | |
+| `log.failures` | `logFailures` | `true` | |
+| `log.headers` | `logHeaders` | `true` | |
+| `log.request_body` | `logRequestBody` | `true` | |
+| `log.response_body` | `logResponseBody` | `true` | |
+| `redact.headers` | `redactHeaders` | [see above](#what-is-masked-by-default) | |
+| `redact.keys` | `redactKeys` | [see above](#what-is-masked-by-default) | |
+| `redact.mask` | `redactionMask` | `[REDACTED]` | |
+| `limits.max_body_bytes` | `maxBodyBytes` | `131072` (128 KB) | |
+| `limits.max_parse_bytes` | `maxParseBytes` | `5242880` (5 MB) | |
+| `context` | `context` | `[]` | |
+| `body_formatters` | `bodyFormatters` | `[]` | |
+| `throw_on_error` | `throwOnError` | `false` | `SALOON_LOGGER_THROW_ON_ERROR` |
 
 ## Customising per connector or request
 
-Implement `ConfiguresLogging` to adjust the options for one connector or one request. `LoggingOptions` is immutable, so every method returns a new copy:
+Implement `ConfiguresLogging` to change options for one connector or one request. The connector is asked first, then the request receives the connector's result. `LoggingOptions` is immutable, so every method returns a new copy.
 
 ```php
 use Illuminate\Support\Facades\Log;
@@ -353,21 +619,8 @@ class RatehawkConnector extends Connector implements ConfiguresLogging
     public function configureLogging(LoggingOptions $options, PendingRequest $pendingRequest): LoggingOptions
     {
         return $options
-            ->withLogger(Log::channel('suppliers'))   // send this supplier's logs elsewhere
-            ->redactKeys('passport_number', 'date_of_birth')
-            ->redactHeaders('X-Signature');
-    }
-}
-```
-
-The connector is asked first, and the request receives the connector's result. That makes it easy to handle single requests differently:
-
-```php
-class DownloadVoucherRequest extends Request implements ConfiguresLogging
-{
-    public function configureLogging(LoggingOptions $options, PendingRequest $pendingRequest): LoggingOptions
-    {
-        return $options->withoutResponseBody();   // the PDF itself isn't interesting
+            ->withLogger(Log::channel('suppliers'))
+            ->redactKeys('passport_number');
     }
 }
 
@@ -375,167 +628,70 @@ class CreatePaymentRequest extends Request implements ConfiguresLogging
 {
     public function configureLogging(LoggingOptions $options, PendingRequest $pendingRequest): LoggingOptions
     {
-        return $options->withoutRequestBody();    // never log card payloads, whatever their field names
+        return $options->withoutRequestBody();
     }
 }
 ```
 
-Available methods:
-
 | Method | Effect |
 |---|---|
-| `disable()` | Don't log this connector/request at all |
-| `withLogger(LoggerInterface $logger)` | Use another logger/channel |
+| `disable()` | Don't log this connector/request |
+| `withLogger(LoggerInterface $logger)` | Use another logger or channel |
 | `withMessages(?string $request, ?string $response, ?string $failure)` | Change messages (only the ones you pass) |
-| `withContext(array $context)` | Merge extra static context |
-| `redactKeys(string ...$keys)` | Add body/query keys to mask |
-| `redactHeaders(string ...$headers)` | Add headers to mask |
-| `withoutHeaders()` | Skip headers |
-| `withoutBodies()` / `withoutRequestBody()` / `withoutResponseBody()` | Skip bodies |
-| `withMaxBodyBytes(?int $bytes)` | Change truncation limit (`null` = never truncate) |
+| `withContext(array $context)` | Add static properties |
+| `redactKeys(string ...$keys)` | Mask more body/query fields |
+| `redactHeaders(string ...$headers)` | Mask more headers |
+| `withoutHeaders()` | Leave out headers |
+| `withoutBodies()` / `withoutRequestBody()` / `withoutResponseBody()` | Leave out bodies |
+| `withMaxBodyBytes(?int $bytes)` | Change the truncation limit (`null` = never truncate) |
 | `withBodyFormatter(BodyFormatter $formatter)` | Add a custom formatter |
 | `with(...)` | Change any option by name, e.g. `->with(logHeaders: false, requestLevel: 'debug')` |
 
 ## Log messages and levels
 
-| Event | Default message | Default level |
+| Event | Message | Level |
 |---|---|---|
-| Request (logged after all middleware and authenticators) | `saloon-request` | `info` |
+| Request | `saloon-request` | `info` |
 | Response 1xx–3xx | `saloon-response` | `info` |
 | Response 4xx | `saloon-response` | `warning` |
 | Response 5xx | `saloon-response` | `error` |
-| Fatal failure (timeout, DNS, TLS, connection refused) | `saloon-failure` | `error` |
+| Failure (no response) | `saloon-failure` | `error` |
 
-The defaults work out of the box. If you ever need different names, you have three options, from broadest to narrowest scope:
-
-**1. Environment variables** (Laravel, no config publishing needed):
+The default message names are recommended. If you ever need different ones, you can change them without touching the package:
 
 ```dotenv
+# .env (Laravel)
 SALOON_LOGGER_REQUEST_MESSAGE=checkout-to-{supplier}
 SALOON_LOGGER_RESPONSE_MESSAGE={supplier}-to-checkout
-SALOON_LOGGER_FAILURE_MESSAGE={supplier}-failed
 ```
 
-**2. The published config file** (`messages.*`).
+You can also set them in the published config (`messages.*`), or per connector/request with `$options->withMessages(request: '…', response: '…')`.
 
-**3. Per connector or request**, in `configureLogging()`:
-
-```php
-return $options->withMessages(
-    request: 'checkout-to-{supplier}',
-    response: '{supplier}-to-checkout',
-);
-```
-
-Available placeholders:
-
-| Placeholder | Value |
-|---|---|
-| `{connector}` | Connector class basename, e.g. `RatehawkConnector` |
-| `{request}` | Request class basename, e.g. `SearchAccommodationsRequest` |
-| `{method}` | HTTP method |
-| `{url}` | URL without query string |
-| `{status}` | Status code (responses only) |
-| `{anyContextKey}` | Any scalar top-level context value, e.g. `{supplier}` |
-
-Unknown placeholders are left as-is, so a typo is easy to spot.
-
-## How bodies are logged
-
-The `Content-Type` header decides how a body is represented. Detection is lenient: JSON sent as `text/html`, or without any content type, is still decoded.
-
-| Content | Logged as |
-|---|---|
-| `application/json`, `*+json` (e.g. `problem+json`) | Decoded array, so fields are searchable in your log viewer |
-| Malformed JSON | Raw string (still redacted) |
-| `application/xml`, `text/xml`, `*+xml` (SOAP) | String, with sensitive elements and attributes masked |
-| `application/x-www-form-urlencoded` | Parsed into fields |
-| Multipart request | One item per part: text fields shown, files described (`[file omitted: 1.2 MB]`) |
-| Text, HTML, CSV, … | String |
-| PDF, images, audio/video, archives, `application/octet-stream`, `application/vnd.*`, invalid UTF-8 | Description, e.g. `[binary body omitted: application/pdf, 84 KB]` |
-| Non-seekable stream (e.g. `'stream' => true` downloads) | `[body omitted: non-seekable stream]`. The stream is never read |
-| Empty body | `null` |
-
-Streams are rewound to their **original position** after reading, so your code and Saloon always get the full body (`$response->json()` works as usual).
-
-## Redaction
-
-Sensitive values are replaced with `[REDACTED]` in:
-
-- **Headers:** `authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`, `api-key`, `x-auth-token`, `x-access-token`, `x-csrf-token`, `x-xsrf-token`
-- **Query parameters and bodies:** `*password*`, `*secret*`, `*token*`, `api_key`, `apikey`, `private_key`, `authorization`, `card_number`, `cardnumber`, `pan`, `cvv`, `cvv2`, `cvc`, `cvc2`, `security_code`, `iban`
-- **URL credentials:** `https://user:pass@host/…` is logged as `https://host/…`
-
-Matching rules:
-
-- **Case and separators are ignored:** `card_number` matches `cardNumber`, `CardNumber`, `card-number` and `CARD_NUMBER`.
-- **`*` is a wildcard:** `*token*` matches `access_token`, `refreshToken` and `X-Session-Token`.
-- If a key matches, its whole value is masked, including nested arrays.
-
-Where redaction applies:
-
-| Body type | What is masked |
-|---|---|
-| JSON / form / query (decoded) | Matching keys at any depth |
-| Multipart | Parts with a matching field name |
-| Raw XML / SOAP | `<Password>…</Password>`, `<ns:Password>…</ns:Password>`, CDATA contents, `password="…"` attributes |
-| Raw strings (malformed JSON, text) | `"key": value` pairs and `key=value` pairs |
-
-Extend the defaults rather than replacing them:
-
-```php
-// config/saloon-logger.php
-use Milzer\SaloonLogger\LoggingOptions;
-
-'redact' => [
-    'headers' => [...LoggingOptions::DEFAULT_REDACTED_HEADERS, 'x-signature'],
-    'keys' => [...LoggingOptions::DEFAULT_REDACTED_KEYS, 'passport_number', 'date_of_birth'],
-    'mask' => '[REDACTED]',
-],
-```
-
-> [!IMPORTANT]
-> **Payment data / PCI:** redaction is a safety net, not a guarantee. It matches field *names*. A supplier that sends card data under a generic name (for example `<Number>` inside `<CreditCard>`) needs an explicit `redactKeys('number')` on that connector. Simpler and safer: use `withoutRequestBody()` on payment requests.
-
-## Size limits
-
-| Option | Default | Behaviour |
-|---|---|---|
-| `max_body_bytes` | 128 KB | Larger bodies are **redacted first, then truncated** and end with `... [truncated, 128 KB of 1.4 MB shown]`. A truncated structured body becomes a string. `null` disables truncation. |
-| `max_parse_bytes` | 5 MB | Larger bodies are not read at all, to protect memory: `[body omitted: 12 MB larger than the 5 MB parse limit, application/json]` |
-
-> [!TIP]
-> Google Cloud Logging rejects entries larger than **256 KB**. Keep `max_body_bytes` well below that, because headers and context take space too.
+Available placeholders: `{connector}`, `{request}` (class basenames), `{method}`, `{url}`, `{status}` (responses only), and any of [your own scalar properties](#adding-your-own-properties), e.g. `{supplier}`.
 
 ## Failures, retries, async and pools
 
 | Scenario | Behaviour |
 |---|---|
-| Connection error, timeout, DNS/TLS failure | A `saloon-failure` entry with `error.type`, `error.message`, `error.code` and the original exception under `exception` (Laravel/Monolog render its stack trace). Your code still gets the `FatalRequestException` as usual. |
-| 4xx / 5xx response | Normal response entry at `warning` / `error` level, logged *before* `AlwaysThrowOnErrors` or `$response->throw()` fires |
-| Retries (`$tries`) | Every attempt is logged as its own exchange with its own `correlation_id` |
-| `sendAsync()` / `pool()` | Requests and responses are logged. See [Known limitations](#known-limitations) for failures |
-| `MockClient` | Logged normally and flagged `mocked: true` |
+| Timeout, DNS, TLS, connection refused | `saloon-failure` entry with the error and original exception. Your code still receives the `FatalRequestException` |
+| 4xx / 5xx response | Response entry at `warning` / `error`, written *before* `AlwaysThrowOnErrors` or `$response->throw()` throws |
+| Retries (`$tries`) | Each attempt is logged separately, with its own `correlation_id` |
+| `sendAsync()` / `pool()` | Requests and responses are logged. See [Known limitations](#known-limitations) |
+| `MockClient` | Logged normally, with `mocked: true` |
 | Plugin on both connector *and* request | Logged once |
-
-**Logging never breaks your HTTP call.** If anything inside the logger throws (including your own `logContext()` or `configureLogging()`), the request continues and this is logged instead:
-
-```
-saloon-logger failed to write a log entry   (with the exception)
-```
+| An error inside the logger (or your `logContext()`) | The HTTP call continues. `saloon-logger failed to write a log entry` is logged instead |
 
 ## Testing your application
 
-Saloon's `MockClient` works as usual, and mocked exchanges are logged with `mocked: true`.
-
-To surface logger errors in your test suite instead of swallowing them:
+`MockClient` works as usual, and mocked calls are logged with `mocked: true`.
 
 ```dotenv
 # .env.testing
-SALOON_LOGGER_THROW_ON_ERROR=true
+SALOON_LOGGER_THROW_ON_ERROR=true    # surface logger errors in tests
+# SALOON_LOGGER_ENABLED=false        # or silence logging completely
 ```
 
-To assert that something was logged in a Laravel test:
+To assert that an entry was written in a Laravel test:
 
 ```php
 use Illuminate\Support\Facades\Log;
@@ -543,7 +699,7 @@ use Illuminate\Support\Facades\Log;
 Log::spy();
 
 $connector->withMockClient(new MockClient([MockResponse::make(['ok' => true])]))
-    ->send(new SearchAccommodationsRequest);
+    ->send(new SearchAccommodationsRequest('BK-1'));
 
 Log::shouldHaveReceived('log')->withArgs(
     fn (string $level, string $message, array $context) => $message === 'saloon-response'
@@ -551,15 +707,9 @@ Log::shouldHaveReceived('log')->withArgs(
 );
 ```
 
-To silence logging entirely in tests:
-
-```dotenv
-SALOON_LOGGER_ENABLED=false
-```
-
 ## Custom body formatters
 
-Implement `BodyFormatter` to support a content type the package doesn't know. Custom formatters are tried **before** the built-in ones, and redaction and truncation are applied to whatever they return:
+To support a content type the package doesn't know, implement `BodyFormatter`. Custom formatters run **before** the built-in ones, and masking and size limits still apply to what they return.
 
 ```php
 use Milzer\SaloonLogger\Contracts\BodyFormatter;
@@ -578,19 +728,7 @@ final class MsgPackFormatter implements BodyFormatter
 }
 ```
 
-Register it globally in the config (resolved from the Laravel container):
-
-```php
-'body_formatters' => [App\Logging\MsgPackFormatter::class],
-```
-
-or per connector/request:
-
-```php
-return $options->withBodyFormatter(new MsgPackFormatter);
-```
-
-`$mimeType` is the lower-cased media type without parameters (`application/json; charset=utf-8` becomes `application/json`), or an empty string when there is no `Content-Type`.
+Register it in the config (`'body_formatters' => [MsgPackFormatter::class]`) or per connector (`$options->withBodyFormatter(new MsgPackFormatter)`).
 
 ## How it works
 
@@ -604,59 +742,59 @@ sequenceDiagram
 
     App->>Saloon: $connector->send($request)
     Saloon->>Plugin: bootHasLogging($pendingRequest)
-    Plugin->>Saloon: register request / response / fatal middleware
+    Plugin->>Saloon: register request / response / failure middleware
     Note over Saloon: auth, headers, body, other middleware
     Saloon->>Plugin: request middleware (runs LAST)
-    Plugin->>Logger: saloon-request (final headers & body, redacted)
+    Plugin->>Logger: saloon-request
     Saloon->>API: HTTP request
     alt response received
         API-->>Saloon: HTTP response
         Saloon->>Plugin: response middleware (runs FIRST)
-        Plugin->>Logger: saloon-response (status, body, response time)
+        Plugin->>Logger: saloon-response
         Saloon-->>App: Response
-    else connection failure
-        Saloon->>Plugin: fatal middleware
-        Plugin->>Logger: saloon-failure (error + exception)
+    else no response
+        Saloon->>Plugin: failure middleware
+        Plugin->>Logger: saloon-failure
         Saloon-->>App: throws FatalRequestException
     end
 ```
 
-Design notes:
+- The request is logged **last** among request middleware, so it shows what was really sent, including authentication headers.
+- The response is logged **first** among response middleware, so you get the raw response and an accurate duration.
+- The plugin never changes the connector or request, following the [Saloon plugin guidelines](https://docs.saloon.dev/installable-plugins/building-your-own-plugins).
+- Nothing holds a reference to the connector or request, so long-running workers (Octane, Horizon, queues) don't leak memory.
 
-- The request is logged by middleware that runs **last**, so it shows what was actually sent, including headers added by authenticators and other middleware.
-- The response is logged by middleware that runs **first**, so you get the raw response and an accurate duration before other middleware changes anything.
-- Following the [Saloon plugin guidelines](https://docs.saloon.dev/installable-plugins/building-your-own-plugins), the plugin never mutates the connector or request.
-- Middleware closures are static and hold no reference to the connector or request, so long-running workers (Octane, Horizon, queues) don't leak memory.
-- Each PendingRequest gets its own state object, so async, pooled and retried requests never mix up timers or correlation ids.
-
-### Package structure
+<details>
+<summary>Package structure</summary>
 
 ```
 src/
 ├── Plugins/HasLogging.php            the Saloon plugin (trait)
-├── SaloonLogger.php                  entry point; registers middleware
+├── SaloonLogger.php                  entry point; registers the middleware
 ├── LoggingOptions.php                immutable configuration
 ├── Contracts/
-│   ├── ProvidesLogContext.php        add context from a connector/request
+│   ├── ProvidesLogContext.php        add your own properties
 │   ├── ConfiguresLogging.php         override options per connector/request
 │   └── BodyFormatter.php             custom body formatting
-├── Internal/ExchangeLogger.php       per-request state: timing, correlation, writing
+├── Internal/ExchangeLogger.php       per-call state: timing, correlation id, writing
 ├── Serialization/
 │   ├── MessageSerializer.php         builds the "http" section
-│   ├── BodySerializer.php            read → format → redact → truncate
+│   ├── BodySerializer.php            read → format → mask → truncate
 │   └── Formatters/                   Binary, Json, Form, Xml, Text
-├── Redaction/Redactor.php            header/array/raw-string masking
+├── Redaction/Redactor.php            masking
 ├── Support/MimeType.php
 ├── Exceptions/MissingLoggerException.php
 └── Laravel/SaloonLoggerServiceProvider.php
 config/saloon-logger.php
 ```
 
+</details>
+
 ## Known limitations
 
-- **Async connection failures are not logged.** Saloon only runs its fatal-exception pipeline for synchronous requests. For `sendAsync()` and pools, handle failures in the promise's `otherwise()` or the pool's exception handler. Successful and error *responses* are logged normally.
-- **Headers added by the HTTP client itself** (e.g. Guzzle's `User-Agent`, `Content-Length`, `Host`) are not part of the request entry, because they're added after Saloon's middleware has run.
-- **Redaction matches field names, not values.** See the PCI note under [Redaction](#redaction).
+- **Connection failures of async requests are not logged.** Saloon only runs its failure pipeline for synchronous requests. For `sendAsync()` and pools, handle failures in `otherwise()` or the pool's exception handler. Their responses are logged normally.
+- **Headers added by Guzzle itself** (`User-Agent`, `Content-Length`, `Host`) are not in the request entry, because Guzzle adds them after Saloon's middleware has run.
+- **Masking matches field names, not values.** See the payment data note in [Masking secrets](#masking-secrets).
 
 ## Development
 
@@ -668,19 +806,19 @@ composer install
 
 | Command | Runs |
 |---|---|
-| `composer test` | Pest test suite |
-| `composer analyse` | PHPStan at level `max` |
+| `composer test` | Pest tests |
+| `composer analyse` | PHPStan (level `max`) |
 | `composer format` | Laravel Pint (fixes code style) |
-| `composer check` | Pint (check only), PHPStan and tests. Run this before pushing |
+| `composer check` | Style check, PHPStan and tests. Run this before pushing |
 
-GitHub Actions runs the tests on PHP 8.2–8.4 against Saloon v3 and v4, with both the lowest and latest dependency versions, plus Pint and PHPStan.
+GitHub Actions runs the tests on PHP 8.2–8.4 against Saloon v3 and v4, with the lowest and the latest dependency versions.
 
 ## Releasing a new version
 
-Composer reads versions from Git tags, following [Semantic Versioning](https://semver.org):
+Composer reads versions from Git tags ([Semantic Versioning](https://semver.org)):
 
-1. Update `CHANGELOG.md`.
-2. Commit, then tag and push:
+1. Update `CHANGELOG.md` and commit.
+2. Create and push the tag:
 
 ```bash
 git tag v1.0.0
@@ -690,18 +828,16 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-3. Optionally, create a GitHub Release from the tag with the changelog entry.
+3. Applications update with `composer update milzer/saloon-logger`.
 
-Applications then pick it up with `composer update milzer/saloon-logger`.
-
-| Change | Bump |
+| Change | Version bump |
 |---|---|
-| Bug fix, no behaviour change | patch (`1.0.1`) |
-| New option or feature, backwards compatible | minor (`1.1.0`) |
-| Changed log structure, removed option, raised PHP/Saloon minimum | major (`2.0.0`) |
+| Bug fix | patch: `1.0.1` |
+| New option or feature, backwards compatible | minor: `1.1.0` |
+| Renamed/removed log property or option, higher PHP/Saloon minimum | major: `2.0.0` |
 
 > [!NOTE]
-> The structure of log entries is part of the public API: dashboards, alerts and log-based metrics depend on field names. Renaming a field is a **major** change.
+> The log structure is part of the public API, because dashboards, alerts and log-based metrics depend on property names. Renaming a property is a **major** change.
 
 ## License
 
