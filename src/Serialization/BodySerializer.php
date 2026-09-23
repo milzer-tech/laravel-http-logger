@@ -26,18 +26,20 @@ use Stringable;
  *
  * @internal
  */
-final class BodySerializer
+final readonly class BodySerializer
 {
     /** @var list<BodyFormatter> */
-    private readonly array $formatters;
+    private array $formatters;
+
+    private TextFormatter $fallback;
 
     /**
      * @param  list<BodyFormatter>  $customFormatters
      */
     public function __construct(
-        private readonly Redactor $redactor,
-        private readonly ?int $maxBodyBytes,
-        private readonly int $maxParseBytes,
+        private Redactor $redactor,
+        private ?int $maxBodyBytes,
+        private int $maxParseBytes,
         array $customFormatters = [],
     ) {
         $this->formatters = [
@@ -46,8 +48,9 @@ final class BodySerializer
             new JsonFormatter,
             new FormFormatter,
             new XmlFormatter,
-            new TextFormatter,
         ];
+
+        $this->fallback = new TextFormatter;
     }
 
     /**
@@ -55,7 +58,7 @@ final class BodySerializer
      */
     public function fromRepository(?BodyRepository $body, ?string $contentType): array|string|int|float|bool|null
     {
-        if ($body === null || $body->isEmpty()) {
+        if (! $body instanceof BodyRepository || $body->isEmpty()) {
             return null;
         }
 
@@ -132,13 +135,18 @@ final class BodySerializer
 
         $mimeType = MimeType::essence($contentType);
 
+        return $this->limit($this->redact($this->formatterFor($mimeType, $body)->format($body, $mimeType)));
+    }
+
+    private function formatterFor(string $mimeType, string $body): BodyFormatter
+    {
         foreach ($this->formatters as $formatter) {
             if ($formatter->supports($mimeType, $body)) {
-                return $this->limit($this->redact($formatter->format($body, $mimeType)));
+                return $formatter;
             }
         }
 
-        return null;
+        return $this->fallback;
     }
 
     /**
@@ -172,8 +180,8 @@ final class BodySerializer
         $size = match (true) {
             $value instanceof StreamInterface => $value->getSize(),
             is_resource($value) => fstat($value)['size'] ?? null,
-            is_scalar($value) => strlen((string) $value),
-            default => null,
+            // MultipartValue only allows streams, resources, strings and numbers.
+            default => is_scalar($value) ? strlen((string) $value) : null,
         };
 
         return sprintf('[file omitted%s]', $size === null ? '' : ': '.MimeType::humanSize($size));
@@ -184,24 +192,16 @@ final class BodySerializer
      */
     private function fromResource(mixed $resource, ?string $contentType): array|string|int|float|bool|null
     {
-        if (! is_resource($resource)) {
-            return null;
-        }
-
-        $meta = stream_get_meta_data($resource);
-
-        if (! $meta['seekable']) {
+        // A closed resource is no longer a resource; treat it like a stream we must not read.
+        if (! is_resource($resource) || ! stream_get_meta_data($resource)['seekable']) {
             return '[body omitted: non-seekable stream]';
         }
 
-        $position = ftell($resource);
+        $position = (int) ftell($resource);
         rewind($resource);
-        $contents = stream_get_contents($resource, $this->maxParseBytes + 1);
-        fseek($resource, $position === false ? 0 : $position);
-
-        if ($contents === false) {
-            return '[body omitted: unreadable stream]';
-        }
+        // stream_get_contents() only returns false on a read error; log that as an empty body.
+        $contents = (string) stream_get_contents($resource, $this->maxParseBytes + 1);
+        fseek($resource, $position);
 
         if (strlen($contents) > $this->maxParseBytes) {
             return $this->tooLarge(null, $contentType);
@@ -232,7 +232,7 @@ final class BodySerializer
      */
     private function limit(array|string|int|float|bool|null $value): array|string|int|float|bool|null
     {
-        if ($this->maxBodyBytes === null || ! (is_array($value) || is_string($value))) {
+        if ($this->maxBodyBytes === null || ! is_array($value) && ! is_string($value)) {
             return $value;
         }
 

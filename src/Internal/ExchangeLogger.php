@@ -138,7 +138,7 @@ final class ExchangeLogger
 
         foreach ($resources as $resource) {
             if ($resource instanceof ProvidesLogContext) {
-                $context = self::mergeContext($context, $resource->logContext($pendingRequest));
+                $context = $this->mergeContext($context, $resource->logContext($pendingRequest));
             }
         }
 
@@ -160,7 +160,7 @@ final class ExchangeLogger
      * @param  array<string, mixed>  $extra
      * @return array<string, mixed>
      */
-    private static function mergeContext(array $base, array $extra): array
+    private function mergeContext(array $base, array $extra): array
     {
         foreach ($extra as $key => $value) {
             $base[$key] = is_array($value) && isset($base[$key]) && is_array($base[$key])
@@ -192,10 +192,6 @@ final class ExchangeLogger
      */
     private function write(string $level, string $message, array $entry, array $http): void
     {
-        if (! $this->isEnabled()) {
-            return;
-        }
-
         ($this->logger ?? $this->defaultLogger)->log($level, $this->interpolate($message, $http), [
             ...$this->context,
             ...$entry,
@@ -248,19 +244,19 @@ final class ExchangeLogger
     {
         try {
             $callback();
-        } catch (Throwable $exception) {
+        } catch (Throwable $throwable) {
             if ($this->active()->throwOnError) {
-                throw $exception;
+                throw $throwable;
             }
 
             try {
                 ($this->logger ?? $this->defaultLogger)->error('saloon-logger failed to write a log entry', [
                     'correlation_id' => $this->correlationId,
                     'saloon' => $this->saloon,
-                    'exception' => $exception,
+                    'exception' => $throwable,
                 ]);
             } catch (Throwable) {
-                error_log(sprintf('[saloon-logger] %s: %s', $exception::class, $exception->getMessage()));
+                error_log(sprintf('[saloon-logger] %s: %s', $throwable::class, $throwable->getMessage()));
             }
         }
     }

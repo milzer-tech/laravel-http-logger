@@ -3,7 +3,6 @@ parameters:
     paths:
         - src
         - config
-    ignoreErrors:
-        # The plugin trait is consumed by user connectors/requests, never inside the package itself.
-        - identifier: trait.unused
-          path: src/Plugins/HasLogging.php
+        - tests
+
+    reportUnmatchedIgnoredErrors: true

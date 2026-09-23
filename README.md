@@ -797,14 +797,39 @@ cd saloon-logger
 composer install
 ```
 
-| Command | Runs |
-|---|---|
-| `composer test` | Pest tests |
-| `composer analyse` | PHPStan (level `max`) |
-| `composer format` | Laravel Pint (fixes code style) |
-| `composer check` | Style check, PHPStan and tests. Run this before pushing |
+The project is held to strict quality gates. Every one of them must pass before a change is merged:
 
-GitHub Actions runs the tests on PHP 8.2–8.4 with the lowest and the latest dependency versions.
+| Command | What it does | Gate |
+|---|---|---|
+| `composer lint` | **Fixes** code style (Pint) and applies automated refactorings (Rector) | – |
+| `composer test:lint` | Checks code style and Rector refactorings without changing files | no changes needed |
+| `composer test:types` | Static analysis with PHPStan at level `max` on `src`, `config` and `tests` | 0 errors |
+| `composer test:unit` | Runs the Pest suite in parallel with code coverage | **exactly 100%** coverage |
+| `composer test:type-coverage` | Checks that every parameter, return value and property has a type | **100%** type coverage |
+| `composer test` | `test:lint` + `test:types` + `test:unit`. Run this before pushing | |
+
+Typical workflow:
+
+```bash
+composer lint                 # let Pint and Rector fix what they can
+composer test                 # lint check, PHPStan and tests with coverage
+composer test:type-coverage   # type coverage
+```
+
+`test:unit` needs a coverage driver. Install [pcov](https://github.com/krakjoe/pcov) (recommended) or Xdebug:
+
+```bash
+pecl install pcov
+```
+
+What the tools check:
+
+- **Pint:** Laravel code style, `declare(strict_types=1)` everywhere, final classes (`pint.json`).
+- **Rector:** dead code, code quality, type declarations, privatization, early returns, coding style, and modern syntax for the minimum supported PHP version (`rector.php`).
+- **PHPStan:** level `max`, the strictest level, including the tests (`phpstan.neon.dist`).
+- **Coverage:** every line in `src/` is executed by a test. Unreachable code is removed rather than excluded.
+
+GitHub Actions runs `test:unit` on PHP 8.2, 8.3 and 8.4 with both the lowest and the latest dependency versions, and runs the lint, PHPStan and type-coverage checks on PHP 8.4.
 
 ## Releasing a new version
 

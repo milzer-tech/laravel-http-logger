@@ -15,13 +15,13 @@ use Saloon\Http\Response;
  *
  * @internal
  */
-final class MessageSerializer
+final readonly class MessageSerializer
 {
-    private readonly BodySerializer $bodies;
+    private BodySerializer $bodies;
 
     public function __construct(
-        private readonly LoggingOptions $options,
-        private readonly Redactor $redactor,
+        private LoggingOptions $options,
+        private Redactor $redactor,
     ) {
         $this->bodies = new BodySerializer(
             $redactor,
@@ -36,7 +36,7 @@ final class MessageSerializer
      */
     public function request(PendingRequest $pendingRequest): array
     {
-        $headers = self::normalizeHeaders($pendingRequest->headers()->all());
+        $headers = $this->normalizeHeaders($pendingRequest->headers()->all());
 
         $uri = $pendingRequest->getUri();
 
@@ -50,7 +50,7 @@ final class MessageSerializer
         }
 
         if ($this->options->logRequestBody) {
-            $http['body'] = $this->bodies->fromRepository($pendingRequest->body(), self::header($headers, 'Content-Type'));
+            $http['body'] = $this->bodies->fromRepository($pendingRequest->body(), $this->header($headers, 'Content-Type'));
         }
 
         return $http;
@@ -63,7 +63,7 @@ final class MessageSerializer
     {
         $psrRequest = $response->getPsrRequest();
         $psrResponse = $response->getPsrResponse();
-        $headers = self::normalizeHeaders($psrResponse->getHeaders());
+        $headers = $this->normalizeHeaders($psrResponse->getHeaders());
 
         $http = [
             ...$this->target($psrRequest->getMethod(), $psrRequest->getUri()),
@@ -75,7 +75,7 @@ final class MessageSerializer
         }
 
         if ($this->options->logResponseBody) {
-            $http['body'] = $this->bodies->fromStream($psrResponse->getBody(), self::header($headers, 'Content-Type'));
+            $http['body'] = $this->bodies->fromStream($psrResponse->getBody(), $this->header($headers, 'Content-Type'));
         }
 
         return $http;
@@ -88,14 +88,14 @@ final class MessageSerializer
     {
         return [
             'method' => strtoupper($method),
-            'url' => self::url($uri),
+            'url' => $this->url($uri),
         ];
     }
 
     /**
      * The URL without query string, fragment or embedded credentials; queries are logged separately.
      */
-    private static function url(UriInterface $uri): string
+    private function url(UriInterface $uri): string
     {
         return (string) $uri->withQuery('')->withFragment('')->withUserInfo('');
     }
@@ -116,7 +116,7 @@ final class MessageSerializer
      * @param  array<array-key, mixed>  $headers
      * @return array<string, string|list<string>>
      */
-    private static function normalizeHeaders(array $headers): array
+    private function normalizeHeaders(array $headers): array
     {
         $normalized = [];
 
@@ -135,7 +135,7 @@ final class MessageSerializer
     /**
      * @param  array<string, string|list<string>>  $headers
      */
-    private static function header(array $headers, string $name): ?string
+    private function header(array $headers, string $name): ?string
     {
         foreach ($headers as $key => $value) {
             if (strcasecmp($key, $name) === 0) {

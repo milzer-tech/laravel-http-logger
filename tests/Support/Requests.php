@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Milzer\SaloonLogger\Tests\Support;
 
+use Closure;
 use Milzer\SaloonLogger\Contracts\ConfiguresLogging;
 use Milzer\SaloonLogger\Contracts\ProvidesLogContext;
 use Milzer\SaloonLogger\LoggingOptions;
 use Milzer\SaloonLogger\Plugins\HasLogging;
+use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Http\Message\StreamInterface;
+use Saloon\Contracts\Body\BodyRepository;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Data\MultipartValue;
 use Saloon\Enums\Method;
@@ -35,6 +39,9 @@ final class SearchRequest extends Request implements HasBody, ProvidesLogContext
         return ['lang' => 'de', 'api_key' => 'query-secret'];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     protected function defaultBody(): array
     {
         return [
@@ -88,6 +95,9 @@ final class FormRequest extends Request implements HasBody
         return '/oauth/token';
     }
 
+    /**
+     * @return array<string, string>
+     */
     protected function defaultBody(): array
     {
         return ['grant_type' => 'client_credentials', 'client_id' => 'abc', 'client_secret' => 'shh'];
@@ -105,6 +115,9 @@ final class UploadRequest extends Request implements HasBody
         return '/documents';
     }
 
+    /**
+     * @return list<MultipartValue>
+     */
     protected function defaultBody(): array
     {
         return [
@@ -140,7 +153,10 @@ final class LoggedRequest extends Request implements ConfiguresLogging
 
     protected Method $method = Method::GET;
 
-    public function __construct(private readonly ?\Closure $configure = null) {}
+    /**
+     * @param  (Closure(LoggingOptions): LoggingOptions)|null  $configure
+     */
+    public function __construct(private readonly ?Closure $configure = null) {}
 
     public function resolveEndpoint(): string
     {
@@ -149,6 +165,80 @@ final class LoggedRequest extends Request implements ConfiguresLogging
 
     public function configureLogging(LoggingOptions $options, PendingRequest $pendingRequest): LoggingOptions
     {
-        return $this->configure ? ($this->configure)($options) : $options;
+        return $this->configure instanceof \Closure ? ($this->configure)($options) : $options;
+    }
+}
+
+final class CustomBodyRequest extends Request implements HasBody
+{
+    protected Method $method = Method::POST;
+
+    public function resolveEndpoint(): string
+    {
+        return '/custom';
+    }
+
+    public function body(): BodyRepository
+    {
+        return new OpaqueBodyRepository;
+    }
+}
+
+/**
+ * A body repository that cannot be turned into a string, e.g. a third-party one.
+ */
+final class OpaqueBodyRepository implements BodyRepository
+{
+    public function set(mixed $value): static
+    {
+        return $this;
+    }
+
+    public function all(): string
+    {
+        return 'opaque';
+    }
+
+    public function isEmpty(): bool
+    {
+        return false;
+    }
+
+    public function isNotEmpty(): bool
+    {
+        return true;
+    }
+
+    public function toStream(StreamFactoryInterface $streamFactory): StreamInterface
+    {
+        return $streamFactory->createStream('opaque');
+    }
+}
+
+final class MultipartFilesRequest extends Request implements HasBody
+{
+    use HasMultipartBody;
+
+    protected Method $method = Method::POST;
+
+    /**
+     * @param  resource  $resource
+     */
+    public function __construct(private readonly StreamInterface $stream, private readonly mixed $resource) {}
+
+    public function resolveEndpoint(): string
+    {
+        return '/documents';
+    }
+
+    /**
+     * @return list<MultipartValue>
+     */
+    protected function defaultBody(): array
+    {
+        return [
+            new MultipartValue('stream', $this->stream, 'a.bin'),
+            new MultipartValue('resource', $this->resource, 'b.bin'),
+        ];
     }
 }

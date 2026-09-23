@@ -23,59 +23,54 @@ use Saloon\Http\Connector;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
-
-function connector(MockResponse ...$responses): TestConnector
-{
-    return (new TestConnector)->withMockClient(new MockClient($responses ?: [MockResponse::make()]));
-}
+use Saloon\Http\Response;
 
 it('logs the request and the response as two correlated entries', function (): void {
     connector(MockResponse::make(['offers' => [['id' => 1]]], 200, ['Content-Type' => 'application/json']))
         ->send(new SearchRequest);
 
-    expect($this->logger->records)->toHaveCount(2);
+    expect(testLog()->records)->toHaveCount(2);
 
-    [$request, $response] = $this->logger->records;
+    $request = testLog()->record(0);
+    $response = testLog()->record(1);
 
-    expect($request['level'])->toBe(LogLevel::INFO)
-        ->and($request['message'])->toBe('saloon-request')
-        ->and($request['context'])->toMatchArray([
+    expect($request->level)->toBe(LogLevel::INFO)
+        ->and($request->message)->toBe('saloon-request')
+        ->and($request->context)->toMatchArray([
             'project' => 'checkout',
             'supplier' => 'ratehawk',
             'api' => 'accommodations',
             'action' => 'search',
         ])
-        ->and($request['context']['http'])->toMatchArray([
+        ->and($request->get('http'))->toMatchArray([
             'method' => 'POST',
             'url' => 'https://api.supplier.test/v1/accommodations/search',
             'queries' => ['lang' => 'de', 'api_key' => '[REDACTED]'],
         ])
-        ->and($request['context']['saloon'])->toBe([
+        ->and($request->get('saloon'))->toBe([
             'connector' => TestConnector::class,
             'request' => SearchRequest::class,
         ]);
 
-    expect($response['message'])->toBe('saloon-response')
-        ->and($response['context']['http']['status'])->toBe(200)
-        ->and($response['context']['http']['body'])->toBe(['offers' => [['id' => 1]]])
-        ->and($response['context']['response_time_in_seconds'])->toBeFloat()
-        ->and($response['context']['mocked'])->toBeTrue()
-        ->and($response['context']['correlation_id'])->toBe($request['context']['correlation_id']);
+    expect($response->message)->toBe('saloon-response')
+        ->and($response->get('http.status'))->toBe(200)
+        ->and($response->get('http.body'))->toBe(['offers' => [['id' => 1]]])
+        ->and($response->get('response_time_in_seconds'))->toBeFloat()
+        ->and($response->get('mocked'))->toBeTrue()
+        ->and($response->get('correlation_id'))->toBe($request->get('correlation_id'));
 });
 
 it('logs the final request including headers added by authenticators', function (): void {
     connector()->send(new SearchRequest);
 
-    $headers = $this->logger->record(0)['context']['http']['headers'];
-
-    expect($headers['Authorization'])->toBe('[REDACTED]')
-        ->and($headers['Content-Type'])->toBe('application/json');
+    expect(testLog()->record(0)->get('http.headers.Authorization'))->toBe('[REDACTED]')
+        ->and(testLog()->record(0)->get('http.headers.Content-Type'))->toBe('application/json');
 });
 
 it('decodes and redacts JSON request bodies', function (): void {
     connector()->send(new SearchRequest);
 
-    expect($this->logger->record(0)['context']['http']['body'])->toBe([
+    expect(testLog()->record(0)->get('http.body'))->toBe([
         'destination' => 'Mallorca',
         'guests' => [['name' => 'Jane', 'passport' => 'X123']],
         'payment' => ['cardNumber' => '[REDACTED]', 'cvv' => '[REDACTED]', 'holder' => 'Jane Doe'],
@@ -86,9 +81,9 @@ it('keeps XML as a string and masks sensitive elements and attributes', function
     connector(MockResponse::make('<Result><Token>abc</Token><Status>OK</Status></Result>', 200, ['Content-Type' => 'text/xml; charset=utf-8']))
         ->send(new XmlRequest);
 
-    expect($this->logger->record(0)['context']['http']['body'])
+    expect(testLog()->record(0)->get('http.body'))
         ->toBe('<?xml version="1.0"?><Envelope><Auth user="bob" password="[REDACTED]"/><ns:Password>[REDACTED]</ns:Password><Hotel>Palma</Hotel></Envelope>')
-        ->and($this->logger->record(1)['context']['http']['body'])
+        ->and(testLog()->record(1)->get('http.body'))
         ->toBe('<Result><Token>[REDACTED]</Token><Status>OK</Status></Result>');
 });
 
@@ -96,16 +91,16 @@ it('parses and redacts form bodies', function (): void {
     connector(MockResponse::make('access_token=xyz&expires_in=3600', 200, ['Content-Type' => 'application/x-www-form-urlencoded']))
         ->send(new FormRequest);
 
-    expect($this->logger->record(0)['context']['http']['body'])
+    expect(testLog()->record(0)->get('http.body'))
         ->toBe(['grant_type' => 'client_credentials', 'client_id' => 'abc', 'client_secret' => '[REDACTED]'])
-        ->and($this->logger->record(1)['context']['http']['body'])
+        ->and(testLog()->record(1)->get('http.body'))
         ->toBe(['access_token' => '[REDACTED]', 'expires_in' => '3600']);
 });
 
 it('summarises multipart bodies without dumping files', function (): void {
     connector()->send(new UploadRequest);
 
-    expect($this->logger->record(0)['context']['http']['body'])->toBe([
+    expect(testLog()->record(0)->get('http.body'))->toBe([
         ['name' => 'title', 'contents' => 'Voucher'],
         ['name' => 'password', 'contents' => '[REDACTED]'],
         ['name' => 'file', 'filename' => 'voucher.pdf', 'contents' => '[file omitted: 1 KB]'],
@@ -121,7 +116,7 @@ it('reads seekable request streams without consuming them', function (): void {
 
     connector()->send($request);
 
-    expect($this->logger->record(0)['context']['http']['body'])->toBe(['a' => 1])
+    expect(testLog()->record(0)->get('http.body'))->toBe(['a' => 1])
         ->and($stream->tell())->toBe(3);
 });
 
@@ -130,14 +125,14 @@ it('never reads non-seekable streams', function (): void {
 
     connector()->send(new StreamRequest($stream));
 
-    expect($this->logger->record(0)['context']['http']['body'])->toBe('[body omitted: non-seekable stream, 11 B]')
+    expect(testLog()->record(0)->get('http.body'))->toBe('[body omitted: non-seekable stream, 11 B]')
         ->and($stream->getContents())->toBe('secret-data');
 });
 
 it('describes binary responses instead of logging them', function (string $contentType, string $body, string $expected): void {
     connector(MockResponse::make($body, 200, ['Content-Type' => $contentType]))->send(new GetBookingRequest);
 
-    expect($this->logger->record(1)['context']['http']['body'])->toBe($expected);
+    expect(testLog()->record(1)->get('http.body'))->toBe($expected);
 })->with([
     'pdf' => ['application/pdf', '%PDF-1.7 ...', '[binary body omitted: application/pdf, 12 B]'],
     'image' => ['image/png', "\x89PNG\r\n", '[binary body omitted: image/png, 6 B]'],
@@ -147,7 +142,7 @@ it('describes binary responses instead of logging them', function (string $conte
 it('handles text, html, empty and mislabelled JSON bodies', function (string $contentType, string $body, mixed $expected): void {
     connector(MockResponse::make($body, 200, $contentType === '' ? [] : ['Content-Type' => $contentType]))->send(new GetBookingRequest);
 
-    expect($this->logger->record(1)['context']['http']['body'])->toBe($expected);
+    expect(testLog()->record(1)->get('http.body'))->toBe($expected);
 })->with([
     'text' => ['text/plain', 'pong', 'pong'],
     'html' => ['text/html', '<h1>Bad Gateway</h1>', '<h1>Bad Gateway</h1>'],
@@ -167,7 +162,7 @@ it('leaves the response body readable for the application', function (): void {
 it('uses warning for 4xx and error for 5xx responses', function (int $status, string $level): void {
     connector(MockResponse::make([], $status))->send(new GetBookingRequest);
 
-    expect($this->logger->record(1)['level'])->toBe($level);
+    expect(testLog()->record(1)->level)->toBe($level);
 })->with([
     [200, LogLevel::INFO],
     [302, LogLevel::INFO],
@@ -177,41 +172,41 @@ it('uses warning for 4xx and error for 5xx responses', function (int $status, st
 ]);
 
 it('truncates oversized bodies after redacting them', function (): void {
-    SaloonLogger::setDefault(new SaloonLogger($this->logger, new LoggingOptions(maxBodyBytes: 40, throwOnError: true)));
+    useOptions(new LoggingOptions(maxBodyBytes: 40, throwOnError: true));
 
     connector(MockResponse::make(['password' => 'hunter2', 'data' => str_repeat('x', 200)]))->send(new GetBookingRequest);
 
-    $body = $this->logger->record(1)['context']['http']['body'];
+    $body = testLog()->record(1)->get('http.body');
 
-    expect($body)->toStartWith('{"password":"[REDACTED]","data":"xxxx')
-        ->toContain('... [truncated, 40 B of')
-        ->not->toContain('hunter2');
+    expect($body)->toStartWith('{"password":"[REDACTED]","data":"xxxx');
+    expect($body)->toContain('... [truncated, 40 B of');
+    expect($body)->not->toContain('hunter2');
 });
 
 it('omits bodies larger than the parse limit', function (): void {
-    SaloonLogger::setDefault(new SaloonLogger($this->logger, new LoggingOptions(maxParseBytes: 10, throwOnError: true)));
+    useOptions(new LoggingOptions(maxParseBytes: 10, throwOnError: true));
 
     connector(MockResponse::make(str_repeat('a', 50), 200, ['Content-Type' => 'text/plain']))->send(new GetBookingRequest);
 
-    expect($this->logger->record(1)['context']['http']['body'])
+    expect(testLog()->record(1)->get('http.body'))
         ->toBe('[body omitted: 50 B larger than the 10 B parse limit, text/plain]');
 });
 
 it('logs fatal connection errors with the underlying exception', function (): void {
     $connector = connector(MockResponse::make()->throw(
-        fn (PendingRequest $pendingRequest) => new FatalRequestException(new RuntimeException('cURL error 28: timed out'), $pendingRequest),
+        fn (PendingRequest $pendingRequest): FatalRequestException => new FatalRequestException(new RuntimeException('cURL error 28: timed out'), $pendingRequest),
     ));
 
-    expect(fn () => $connector->send(new GetBookingRequest))->toThrow(FatalRequestException::class);
+    expect(fn (): Response => $connector->send(new GetBookingRequest))->toThrow(FatalRequestException::class);
 
-    $failure = $this->logger->record(1);
+    $failure = testLog()->record(1);
 
-    expect($failure['level'])->toBe(LogLevel::ERROR)
-        ->and($failure['message'])->toBe('saloon-failure')
-        ->and($failure['context']['http'])->toBe(['method' => 'GET', 'url' => 'https://api.supplier.test/v1/bookings/42'])
-        ->and($failure['context']['error'])->toBe(['type' => RuntimeException::class, 'message' => 'cURL error 28: timed out', 'code' => 0])
-        ->and($failure['context']['exception'])->toBeInstanceOf(RuntimeException::class)
-        ->and($failure['context']['correlation_id'])->toBe($this->logger->record(0)['context']['correlation_id']);
+    expect($failure->level)->toBe(LogLevel::ERROR)
+        ->and($failure->message)->toBe('saloon-failure')
+        ->and($failure->get('http'))->toBe(['method' => 'GET', 'url' => 'https://api.supplier.test/v1/bookings/42'])
+        ->and($failure->get('error'))->toBe(['type' => RuntimeException::class, 'message' => 'cURL error 28: timed out', 'code' => 0])
+        ->and($failure->get('exception'))->toBeInstanceOf(RuntimeException::class)
+        ->and($failure->get('correlation_id'))->toBe(testLog()->record(0)->get('correlation_id'));
 });
 
 it('logs every retry attempt with its own correlation id', function (): void {
@@ -221,11 +216,11 @@ it('logs every retry attempt with its own correlation id', function (): void {
 
     $connector->send($request);
 
-    expect($this->logger->records)->toHaveCount(4)
-        ->and($this->logger->record(1)['context']['http']['status'])->toBe(500)
-        ->and($this->logger->record(3)['context']['http']['status'])->toBe(200)
-        ->and($this->logger->record(0)['context']['correlation_id'])
-        ->not->toBe($this->logger->record(2)['context']['correlation_id']);
+    expect(testLog()->records)->toHaveCount(4)
+        ->and(testLog()->record(1)->get('http.status'))->toBe(500)
+        ->and(testLog()->record(3)->get('http.status'))->toBe(200)
+        ->and(testLog()->record(0)->get('correlation_id'))
+        ->not->toBe(testLog()->record(2)->get('correlation_id'));
 });
 
 it('logs asynchronous and pooled requests', function (): void {
@@ -233,47 +228,50 @@ it('logs asynchronous and pooled requests', function (): void {
 
     $connector->pool([new GetBookingRequest, new GetBookingRequest], concurrency: 2)->send()->wait();
 
-    expect($this->logger->records)->toHaveCount(4);
+    expect(testLog()->records)->toHaveCount(4);
 });
 
 it('logs once when both the connector and the request use the plugin', function (): void {
     connector()->send(new LoggedRequest);
 
-    expect($this->logger->records)->toHaveCount(2);
+    expect(testLog()->records)->toHaveCount(2);
 });
 
 it('lets a request customise messages, redaction, logger and bodies', function (): void {
     $other = new ArrayLogger;
 
     connector(MockResponse::make(['holder' => 'Jane', 'ok' => true]))->send(new LoggedRequest(
-        fn (LoggingOptions $options) => $options
+        fn (LoggingOptions $options): LoggingOptions => $options
             ->withLogger($other)
             ->withMessages(request: 'checkout-to-{supplier}', response: '{supplier}-to-checkout {status}')
             ->redactKeys('holder')
             ->withoutRequestBody(),
     ));
 
-    expect($this->logger->records)->toBeEmpty()
-        ->and($other->record(0)['message'])->toBe('checkout-to-ratehawk')
-        ->and($other->record(0)['context']['http'])->not->toHaveKey('body')
-        ->and($other->record(1)['message'])->toBe('ratehawk-to-checkout 200')
-        ->and($other->record(1)['context']['http']['body'])->toBe(['holder' => '[REDACTED]', 'ok' => true]);
+    expect(testLog()->records)->toBeEmpty()
+        ->and($other->record(0)->message)->toBe('checkout-to-ratehawk')
+        ->and($other->record(0)->has('http.body'))->toBeFalse()
+        ->and($other->record(1)->message)->toBe('ratehawk-to-checkout 200')
+        ->and($other->record(1)->get('http.body'))->toBe(['holder' => '[REDACTED]', 'ok' => true]);
 });
 
 it('can be disabled per request', function (): void {
-    connector()->send(new LoggedRequest(fn (LoggingOptions $options) => $options->disable()));
+    connector()->send(new LoggedRequest(fn (LoggingOptions $options): LoggingOptions => $options->disable()));
 
-    expect($this->logger->records)->toBeEmpty();
+    expect(testLog()->records)->toBeEmpty();
 });
 
 it('never breaks the HTTP call when logging fails', function (): void {
-    SaloonLogger::setDefault(new SaloonLogger($this->logger));
+    useOptions(new LoggingOptions);
 
-    $response = connector()->send(new LoggedRequest(fn () => throw new RuntimeException('bad config')));
+    $response = connector()->send(new LoggedRequest(fn (): LoggingOptions => throw new RuntimeException('bad config')));
+
+    $exception = testLog()->record(0)->get('exception');
 
     expect($response->status())->toBe(200)
-        ->and($this->logger->record(0)['message'])->toBe('saloon-logger failed to write a log entry')
-        ->and($this->logger->record(0)['context']['exception']->getMessage())->toBe('bad config');
+        ->and(testLog()->record(0)->message)->toBe('saloon-logger failed to write a log entry')
+        ->and($exception)->toBeInstanceOf(RuntimeException::class)
+        ->and($exception instanceof RuntimeException ? $exception->getMessage() : null)->toBe('bad config');
 });
 
 it('throws a helpful exception when no logger is configured', function (): void {
@@ -295,5 +293,5 @@ it('strips credentials embedded in the URL', function (): void {
 
     $connector->withMockClient(new MockClient([MockResponse::make()]))->send(new GetBookingRequest);
 
-    expect($this->logger->record(0)['context']['http']['url'])->toBe('https://api.supplier.test/bookings/42');
+    expect(testLog()->record(0)->get('http.url'))->toBe('https://api.supplier.test/bookings/42');
 });

@@ -1,8 +1,9 @@
 name: tests
 
-on:
-  push:
-  pull_request:
+on: ['push', 'pull_request']
+
+permissions:
+  contents: read
 
 jobs:
   tests:
@@ -13,7 +14,7 @@ jobs:
         php: ['8.2', '8.3', '8.4']
         stability: [prefer-lowest, prefer-stable]
 
-    name: PHP ${{ matrix.php }} / ${{ matrix.stability }}
+    name: Tests PHP ${{ matrix.php }} / ${{ matrix.stability }}
 
     steps:
       - uses: actions/checkout@v5
@@ -21,24 +22,35 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          coverage: none
+          coverage: pcov
 
       - name: Install dependencies
         run: composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
 
-      - name: Run tests
-        run: vendor/bin/pest
+      - name: Unit tests (100% coverage)
+        run: composer test:unit
 
   quality:
     runs-on: ubuntu-latest
+
+    name: Lint, types & type coverage
+
     steps:
       - uses: actions/checkout@v5
 
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: '8.4'
           coverage: none
 
-      - run: composer update --prefer-dist --no-interaction --no-progress
-      - run: vendor/bin/pint --test
-      - run: vendor/bin/phpstan analyse --no-progress
+      - name: Install dependencies
+        run: composer update --prefer-stable --prefer-dist --no-interaction --no-progress
+
+      - name: Coding style & refactoring (Pint, Rector)
+        run: composer test:lint
+
+      - name: Static analysis (PHPStan max)
+        run: composer test:types
+
+      - name: Type coverage (100%)
+        run: composer test:type-coverage

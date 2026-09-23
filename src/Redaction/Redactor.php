@@ -36,8 +36,8 @@ final class Redactor
         array $keys,
         private readonly string $mask = '[REDACTED]',
     ) {
-        $this->headerPattern = self::compile($headers);
-        $this->keyPattern = self::compile($keys);
+        $this->headerPattern = $this->compile($headers);
+        $this->keyPattern = $this->compile($keys);
     }
 
     /**
@@ -47,7 +47,7 @@ final class Redactor
     public function headers(array $headers): array
     {
         foreach ($headers as $name => $value) {
-            if (self::matches($this->headerPattern, $name)) {
+            if ($this->matches($this->headerPattern, $name)) {
                 $headers[$name] = $this->mask;
             }
         }
@@ -98,7 +98,7 @@ final class Redactor
 
     public function isSensitiveKey(string $key): bool
     {
-        return $this->cache[$key] ??= self::matches($this->keyPattern, $key);
+        return $this->cache[$key] ??= $this->matches($this->keyPattern, $key);
     }
 
     public function mask(): string
@@ -156,20 +156,20 @@ final class Redactor
         return $m[1].$m[2].'='.rawurlencode($this->mask);
     }
 
-    private static function matches(?string $pattern, string $key): bool
+    private function matches(?string $pattern, string $key): bool
     {
-        return $pattern !== null && preg_match($pattern, self::normalize($key)) === 1;
+        return $pattern !== null && preg_match($pattern, $this->normalize($key)) === 1;
     }
 
     /**
      * @param  list<string>  $rules
      */
-    private static function compile(array $rules): ?string
+    private function compile(array $rules): ?string
     {
         $alternatives = [];
 
         foreach ($rules as $rule) {
-            $normalized = self::normalize($rule, keepWildcards: true);
+            $normalized = $this->normalize($rule, keepWildcards: true);
 
             if ($normalized !== '' && $normalized !== '*') {
                 $alternatives[] = str_replace('\*', '.*', preg_quote($normalized, '/'));
@@ -179,7 +179,7 @@ final class Redactor
         return $alternatives === [] ? null : '/^(?:'.implode('|', array_unique($alternatives)).')$/';
     }
 
-    private static function normalize(string $key, bool $keepWildcards = false): string
+    private function normalize(string $key, bool $keepWildcards = false): string
     {
         return (string) preg_replace($keepWildcards ? '/[^a-z0-9*]/' : '/[^a-z0-9]/', '', strtolower($key));
     }

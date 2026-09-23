@@ -13,4 +13,5 @@ All notable changes to this package are documented here. The format follows
 - Redaction of headers, query parameters and body keys (structured and raw XML/JSON/form).
 - Body truncation and parse limits, correlation ids, response timing.
 - `ProvidesLogContext` and `ConfiguresLogging` contracts for per-connector/request customisation.
+- Quality gates: Pint, Rector, PHPStan (max, incl. tests), 100% code coverage and 100% type coverage (`composer test`, `composer test:type-coverage`).
 - Laravel service provider with publishable config; message names overridable via `SALOON_LOGGER_*_MESSAGE` env variables.

@@ -4,24 +4,40 @@ declare(strict_types=1);
 
 namespace Milzer\SaloonLogger\Tests\Support;
 
+use OutOfBoundsException;
 use Psr\Log\AbstractLogger;
 use Stringable;
 
 final class ArrayLogger extends AbstractLogger
 {
-    /** @var list<array{level: string, message: string, context: array<string, mixed>}> */
+    private static ?self $current = null;
+
+    /** @var list<LogRecord> */
     public array $records = [];
 
-    public function log($level, string|Stringable $message, array $context = []): void
+    /**
+     * Starts a fresh logger for the current test and returns it.
+     */
+    public static function fresh(): self
     {
-        $this->records[] = ['level' => (string) $level, 'message' => (string) $message, 'context' => $context];
+        return self::$current = new self;
+    }
+
+    public static function current(): self
+    {
+        return self::$current ?? throw new OutOfBoundsException('No test logger has been started.');
     }
 
     /**
-     * @return array{level: string, message: string, context: array<string, mixed>}
+     * @param  array<array-key, mixed>  $context
      */
-    public function record(int $index): array
+    public function log(mixed $level, string|Stringable $message, array $context = []): void
     {
-        return $this->records[$index];
+        $this->records[] = new LogRecord(is_string($level) ? $level : 'unknown', (string) $message, $context);
+    }
+
+    public function record(int $index): LogRecord
+    {
+        return $this->records[$index] ?? throw new OutOfBoundsException(sprintf('No log record at index %d.', $index));
     }
 }

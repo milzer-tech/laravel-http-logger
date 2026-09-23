@@ -3,7 +3,15 @@
     "description": "A Saloon plugin that logs every outgoing request and incoming response as structured, redacted PSR-3 log entries.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["saloon", "saloon-plugin", "logging", "psr-3", "http", "api", "laravel"],
+    "keywords": [
+        "saloon",
+        "saloon-plugin",
+        "logging",
+        "psr-3",
+        "http",
+        "api",
+        "laravel"
+    ],
     "homepage": "https://github.com/milzer-tech/saloon-logger",
     "support": {
         "issues": "https://github.com/milzer-tech/saloon-logger/issues",
@@ -22,10 +30,12 @@
         "saloonphp/saloon": "^4.0"
     },
     "require-dev": {
-        "laravel/pint": "^1.18",
+        "laravel/pint": "^1.22",
         "orchestra/testbench": "^9.0 || ^10.0",
-        "pestphp/pest": "^3.0",
-        "phpstan/phpstan": "^2.1"
+        "pestphp/pest": "^3.8 || ^4.0",
+        "pestphp/pest-plugin-type-coverage": "^3.6.1 || ^4.0",
+        "phpstan/phpstan": "^2.1",
+        "rector/rector": "^2.1"
     },
     "suggest": {
         "illuminate/support": "Enables the auto-discovered Laravel service provider and publishable config."
@@ -41,13 +51,21 @@
         }
     },
     "scripts": {
-        "test": "pest",
-        "analyse": "phpstan analyse --memory-limit=1G",
-        "format": "pint",
-        "check": [
-            "pint --test",
-            "@analyse",
-            "@test"
+        "lint": [
+            "pint --parallel",
+            "rector"
+        ],
+        "test:type-coverage": "pest --type-coverage --min=100",
+        "test:lint": [
+            "pint --parallel --test",
+            "rector --dry-run"
+        ],
+        "test:unit": "pest --parallel --coverage --exactly=100",
+        "test:types": "phpstan",
+        "test": [
+            "@test:lint",
+            "@test:types",
+            "@test:unit"
         ]
     },
     "extra": {
@@ -61,7 +79,8 @@
         "sort-packages": true,
         "allow-plugins": {
             "pestphp/pest-plugin": true
-        }
+        },
+        "preferred-install": "dist"
     },
     "minimum-stability": "stable",
     "prefer-stable": true

@@ -5,6 +5,9 @@ declare(strict_types=1);
 use Milzer\SaloonLogger\LoggingOptions;
 use Milzer\SaloonLogger\Redaction\Redactor;
 
+/**
+ * @param  list<string>  $keys
+ */
 function redactor(array $keys = LoggingOptions::DEFAULT_REDACTED_KEYS): Redactor
 {
     return new Redactor(LoggingOptions::DEFAULT_REDACTED_HEADERS, $keys);

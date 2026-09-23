@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Milzer\SaloonLogger\LoggingOptions;
 use Milzer\SaloonLogger\Serialization\Formatters\TextFormatter;
+use Milzer\SaloonLogger\Tests\Support\ArrayLogger;
 use Psr\Log\LogLevel;
 
 it('is immutable', function (): void {
@@ -42,3 +43,37 @@ it('builds from a config array', function (): void {
 it('rejects invalid log levels', function (): void {
     new LoggingOptions(requestLevel: 'loud');
 })->throws(InvalidArgumentException::class);
+
+it('rejects negative size limits', function (int $maxBodyBytes, int $maxParseBytes): void {
+    new LoggingOptions(maxBodyBytes: $maxBodyBytes, maxParseBytes: $maxParseBytes);
+})->with([
+    'body' => [-1, 10],
+    'parse' => [10, -1],
+])->throws(InvalidArgumentException::class);
+
+it('rejects body formatters that do not implement the contract', function (): void {
+    LoggingOptions::fromArray(['body_formatters' => [stdClass::class]]);
+})->throws(InvalidArgumentException::class);
+
+it('offers fluent helpers for every common change', function (): void {
+    $logger = new ArrayLogger;
+    $formatter = new TextFormatter;
+
+    $options = (new LoggingOptions(context: ['a' => ['b' => 1]]))
+        ->withContext(['a' => ['c' => 2], 'd' => 3])
+        ->redactHeaders('X-Signature')
+        ->withoutHeaders()
+        ->withoutResponseBody()
+        ->withMaxBodyBytes(10)
+        ->withBodyFormatter($formatter)
+        ->withLogger($logger);
+
+    expect($options->context)->toBe(['a' => ['b' => 1, 'c' => 2], 'd' => 3])
+        ->and($options->redactHeaders)->toContain('X-Signature', 'authorization')
+        ->and($options->logHeaders)->toBeFalse()
+        ->and($options->logRequestBody)->toBeTrue()
+        ->and($options->logResponseBody)->toBeFalse()
+        ->and($options->maxBodyBytes)->toBe(10)
+        ->and($options->bodyFormatters)->toBe([$formatter])
+        ->and($options->logger)->toBe($logger);
+});
