@@ -1,0 +1,63 @@
+{
+    "name": "milzer/saloon-logger",
+    "description": "A Saloon plugin that logs every outgoing request and incoming response as structured, redacted PSR-3 log entries.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["saloon", "saloon-plugin", "logging", "psr-3", "http", "api", "laravel"],
+    "authors": [
+        {
+            "name": "Milzer",
+            "email": "azim@milzer.de"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "psr/http-message": "^1.1 || ^2.0",
+        "psr/log": "^1.1 || ^2.0 || ^3.0",
+        "saloonphp/saloon": "^3.10 || ^4.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.18",
+        "orchestra/testbench": "^9.0 || ^10.0",
+        "pestphp/pest": "^3.0",
+        "phpstan/phpstan": "^2.1"
+    },
+    "suggest": {
+        "illuminate/support": "Enables the auto-discovered Laravel service provider and publishable config."
+    },
+    "autoload": {
+        "psr-4": {
+            "Milzer\\SaloonLogger\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Milzer\\SaloonLogger\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "format": "pint",
+        "check": [
+            "pint --test",
+            "@analyse",
+            "@test"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Milzer\\SaloonLogger\\Laravel\\SaloonLoggerServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
