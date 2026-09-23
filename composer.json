@@ -4,6 +4,11 @@
     "type": "library",
     "license": "MIT",
     "keywords": ["saloon", "saloon-plugin", "logging", "psr-3", "http", "api", "laravel"],
+    "homepage": "https://github.com/milzer-tech/saloon-logger",
+    "support": {
+        "issues": "https://github.com/milzer-tech/saloon-logger/issues",
+        "source": "https://github.com/milzer-tech/saloon-logger"
+    },
     "authors": [
         {
             "name": "Milzer",

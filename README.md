@@ -1,8 +1,9 @@
 # Saloon Logger
 
-[![tests](https://github.com/milzer/saloon-logger/actions/workflows/tests.yml/badge.svg)](https://github.com/milzer/saloon-logger/actions/workflows/tests.yml)
+[![tests](https://github.com/milzer-tech/saloon-logger/actions/workflows/tests.yml/badge.svg)](https://github.com/milzer-tech/saloon-logger/actions/workflows/tests.yml)
 ![PHP](https://img.shields.io/badge/php-8.2%2B-777bb4)
 ![Saloon](https://img.shields.io/badge/saloon-v3.10%2B%20%7C%20v4-orange)
+[![Packagist](https://img.shields.io/packagist/v/milzer/saloon-logger)](https://packagist.org/packages/milzer/saloon-logger)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 A [Saloon](https://docs.saloon.dev) plugin that automatically logs every HTTP request your application sends and every response it receives. The log entries are structured, secrets are masked, and they work with any PSR-3 logger (Laravel, Monolog, …).
@@ -73,42 +74,34 @@ It works with Saloon v3.10+ and v4, sync and async requests, pools, retries and 
 
 ## Installation
 
-The package is installed from GitHub. Add the repository to your application's `composer.json`:
-
-```json
-{
-    "repositories": [
-        { "type": "vcs", "url": "https://github.com/milzer/saloon-logger" }
-    ]
-}
-```
-
-Then install it:
-
 ```bash
 composer require milzer/saloon-logger
 ```
 
-Composer installs the latest tagged release. To use the unreleased `main` branch, require `milzer/saloon-logger:dev-main`.
+Composer installs the latest tagged release. To try the unreleased `main` branch, require `milzer/saloon-logger:dev-main`.
 
-### If the repository is private
+<details>
+<summary>Installing straight from GitHub (before the package is on Packagist, or from a fork)</summary>
 
-Composer needs a GitHub token with read access:
+Add the repository to your application's `composer.json`, then run the `composer require` command above:
 
-1. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens) with **Contents: Read-only** on this repository.
-2. Register it with Composer on your machine:
+```json
+{
+    "repositories": [
+        { "type": "vcs", "url": "https://github.com/milzer-tech/saloon-logger" }
+    ]
+}
+```
+
+If the repository is private, Composer also needs a GitHub token with **Contents: Read-only** access to it. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens), then either register it locally:
 
 ```bash
 composer config --global github-oauth.github.com <your-token>
 ```
 
-In CI, set the `COMPOSER_AUTH` environment variable instead:
+or, in CI, set `COMPOSER_AUTH='{"github-oauth":{"github.com":"<your-token>"}}'`. Never commit the token or an `auth.json` file.
 
-```bash
-COMPOSER_AUTH='{"github-oauth":{"github.com":"<your-token>"}}'
-```
-
-Never commit the token or an `auth.json` file.
+</details>
 
 ## Quick start
 
@@ -799,7 +792,7 @@ config/saloon-logger.php
 ## Development
 
 ```bash
-git clone https://github.com/milzer/saloon-logger.git
+git clone https://github.com/milzer-tech/saloon-logger.git
 cd saloon-logger
 composer install
 ```
