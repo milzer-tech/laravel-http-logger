@@ -7,6 +7,7 @@ use Milzer\SaloonLogger\Laravel\SaloonLoggerServiceProvider;
 use Milzer\SaloonLogger\SaloonLogger;
 use Milzer\SaloonLogger\Tests\Support\GetBookingRequest;
 use Milzer\SaloonLogger\Tests\Support\TestConnector;
+use Monolog\Handler\TestHandler;
 use Orchestra\Testbench\TestCase;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -19,23 +20,27 @@ beforeEach(function (): void {
 
 it('registers the logger from config and makes it the plugin default', function (): void {
     config([
-        'saloon-logger.channel' => 'stack',
+        'logging.channels.saloon-test' => ['driver' => 'monolog', 'handler' => TestHandler::class],
+        'saloon-logger.channel' => 'saloon-test',
         'saloon-logger.messages.request' => 'checkout-to-{supplier}',
         'saloon-logger.context' => ['environment' => 'testing'],
     ]);
 
-    Log::shouldReceive('channel')->with('stack')->andReturnSelf();
-    Log::shouldReceive('log')->once()->withArgs(
-        fn (string $level, string $message, array $context) => $level === 'info'
-            && $message === 'checkout-to-ratehawk'
-            && $context['environment'] === 'testing'
-            && $context['project'] === 'checkout',
-    );
-    Log::shouldReceive('log')->once()->withArgs(fn (string $level, string $message) => $message === 'saloon-response');
-
     expect(SaloonLogger::resolve())->toBe($this->app->make(SaloonLogger::class));
 
     (new TestConnector)->withMockClient(new MockClient([MockResponse::make()]))->send(new GetBookingRequest);
+
+    /** @var TestHandler $handler */
+    $handler = collect(Log::channel('saloon-test')->getLogger()->getHandlers())
+        ->first(fn ($handler) => $handler instanceof TestHandler);
+
+    [$request, $response] = $handler->getRecords();
+
+    expect($request->level->getName())->toBe('INFO')
+        ->and($request->message)->toBe('checkout-to-ratehawk')
+        ->and($request->context['environment'])->toBe('testing')
+        ->and($request->context['project'])->toBe('checkout')
+        ->and($response->message)->toBe('saloon-response');
 });
 
 it('publishes its config', function (): void {
