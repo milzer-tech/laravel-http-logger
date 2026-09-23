@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/milzer-tech/saloon-logger/actions/workflows/tests.yml/badge.svg)](https://github.com/milzer-tech/saloon-logger/actions/workflows/tests.yml)
 ![PHP](https://img.shields.io/badge/php-8.2%2B-777bb4)
-![Saloon](https://img.shields.io/badge/saloon-v3.10%2B%20%7C%20v4-orange)
+![Saloon](https://img.shields.io/badge/saloon-v4-orange)
 [![Packagist](https://img.shields.io/packagist/v/milzer/saloon-logger)](https://packagist.org/packages/milzer/saloon-logger)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -61,14 +61,14 @@ Along the way the package:
 - **Lets you add your own properties** (`supplier`, `client`, `action`, …). See [Adding your own properties](#adding-your-own-properties).
 - **Stays out of your way.** Your code can still read the response body, and a problem inside the logger never breaks the HTTP call.
 
-It works with Saloon v3.10+ and v4, sync and async requests, pools, retries and `MockClient`, in Laravel or any other framework.
+It works with Saloon v4, sync and async requests, pools, retries and `MockClient`, in Laravel or any other framework.
 
 ## Requirements
 
 | | Version |
 |---|---|
 | PHP | 8.2 or higher |
-| Saloon | `^3.10` or `^4.0` |
+| Saloon | `^4.0` (v3 is not supported: every v3 release is affected by [security advisories](https://packagist.org/security-advisories/?package=saloonphp/saloon) fixed only in v4) |
 | Logger | Any PSR-3 logger |
 | Laravel (optional) | 11 or 12 |
 
@@ -804,7 +804,7 @@ composer install
 | `composer format` | Laravel Pint (fixes code style) |
 | `composer check` | Style check, PHPStan and tests. Run this before pushing |
 
-GitHub Actions runs the tests on PHP 8.2–8.4 against Saloon v3 and v4, with the lowest and the latest dependency versions.
+GitHub Actions runs the tests on PHP 8.2–8.4 with the lowest and the latest dependency versions.
 
 ## Releasing a new version
 

@@ -11,10 +11,9 @@ jobs:
       fail-fast: false
       matrix:
         php: ['8.2', '8.3', '8.4']
-        saloon: ['^3.10', '^4.0']
         stability: [prefer-lowest, prefer-stable]
 
-    name: PHP ${{ matrix.php }} / Saloon ${{ matrix.saloon }} / ${{ matrix.stability }}
+    name: PHP ${{ matrix.php }} / ${{ matrix.stability }}
 
     steps:
       - uses: actions/checkout@v4
@@ -25,9 +24,7 @@ jobs:
           coverage: none
 
       - name: Install dependencies
-        run: |
-          composer require "saloonphp/saloon:${{ matrix.saloon }}" --no-update --no-interaction
-          composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
+        run: composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
 
       - name: Run tests
         run: vendor/bin/pest

@@ -7,6 +7,7 @@ All notable changes to this package are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Requires Saloon `^4.0` (Saloon v3 is affected by CVE-2026-33942, CVE-2026-33182 and CVE-2026-33183).
 - `HasLogging` Saloon plugin logging requests, responses and fatal failures as PSR-3 entries.
 - Content-aware body handling: JSON, XML/SOAP, form, multipart, text, binary and streams.
 - Redaction of headers, query parameters and body keys (structured and raw XML/JSON/form).
