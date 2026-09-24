@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Milzer\SaloonLogger\Tests\Support;
+namespace Milzer\HttpLogger\Tests\Support;
 
 use OutOfBoundsException;
 
@@ -33,6 +33,16 @@ final readonly class LogRecord
         }
 
         return $value;
+    }
+
+    /**
+     * Reads a context value that must be a string.
+     */
+    public function string(string $path): string
+    {
+        $value = $this->get($path);
+
+        return is_string($value) ? $value : throw new OutOfBoundsException(sprintf('Log context "%s" is not a string.', $path));
     }
 
     public function has(string $path): bool

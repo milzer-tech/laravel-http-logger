@@ -1,21 +1,22 @@
 {
-    "name": "milzer/saloon-logger",
-    "description": "A Saloon plugin that logs every outgoing request and incoming response as structured, redacted PSR-3 log entries.",
+    "name": "milzer/laravel-http-logger",
+    "description": "Structured, redacted logging of HTTP traffic in Laravel: incoming requests and outgoing Saloon calls, with one shared trace id.",
     "type": "library",
     "license": "MIT",
     "keywords": [
+        "laravel",
+        "http",
+        "logging",
+        "middleware",
         "saloon",
         "saloon-plugin",
-        "logging",
-        "psr-3",
-        "http",
-        "api",
-        "laravel"
+        "request-logging",
+        "trace"
     ],
-    "homepage": "https://github.com/milzer-tech/saloon-logger",
+    "homepage": "https://github.com/milzer-tech/laravel-http-logger",
     "support": {
-        "issues": "https://github.com/milzer-tech/saloon-logger/issues",
-        "source": "https://github.com/milzer-tech/saloon-logger"
+        "issues": "https://github.com/milzer-tech/laravel-http-logger/issues",
+        "source": "https://github.com/milzer-tech/laravel-http-logger"
     },
     "authors": [
         {
@@ -25,9 +26,16 @@
     ],
     "require": {
         "php": "^8.2",
+        "illuminate/console": "^11.0 || ^12.0",
+        "illuminate/contracts": "^11.0 || ^12.0",
+        "illuminate/filesystem": "^11.0 || ^12.0",
+        "illuminate/http": "^11.0 || ^12.0",
+        "illuminate/log": "^11.0 || ^12.0",
+        "illuminate/routing": "^11.0 || ^12.0",
+        "illuminate/support": "^11.0 || ^12.0",
+        "league/flysystem": "^3.0",
         "psr/http-message": "^1.1 || ^2.0",
-        "psr/log": "^1.1 || ^2.0 || ^3.0",
-        "saloonphp/saloon": "^4.0"
+        "psr/log": "^1.1 || ^2.0 || ^3.0"
     },
     "require-dev": {
         "laravel/pint": "^1.22",
@@ -35,19 +43,24 @@
         "pestphp/pest": "^3.8 || ^4.0",
         "pestphp/pest-plugin-type-coverage": "^3.6.1 || ^4.0",
         "phpstan/phpstan": "^2.1",
-        "rector/rector": "^2.1"
+        "phpstan/phpstan-mockery": "^2.0",
+        "rector/rector": "^2.1",
+        "saloonphp/saloon": "^4.0"
     },
     "suggest": {
-        "illuminate/support": "Enables the auto-discovered Laravel service provider and publishable config."
+        "saloonphp/saloon": "Required to log outgoing calls with the HasLogging Saloon plugin (^4.0)."
+    },
+    "conflict": {
+        "saloonphp/saloon": "<4.0"
     },
     "autoload": {
         "psr-4": {
-            "Milzer\\SaloonLogger\\": "src/"
+            "Milzer\\HttpLogger\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Milzer\\SaloonLogger\\Tests\\": "tests/"
+            "Milzer\\HttpLogger\\Tests\\": "tests/"
         }
     },
     "scripts": {
@@ -71,7 +84,7 @@
     "extra": {
         "laravel": {
             "providers": [
-                "Milzer\\SaloonLogger\\Laravel\\SaloonLoggerServiceProvider"
+                "Milzer\\HttpLogger\\Laravel\\HttpLoggerServiceProvider"
             ]
         }
     },

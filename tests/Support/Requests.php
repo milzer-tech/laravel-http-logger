@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Milzer\SaloonLogger\Tests\Support;
+namespace Milzer\HttpLogger\Tests\Support;
 
 use Closure;
-use Milzer\SaloonLogger\Contracts\ConfiguresLogging;
-use Milzer\SaloonLogger\Contracts\ProvidesLogContext;
-use Milzer\SaloonLogger\LoggingOptions;
-use Milzer\SaloonLogger\Plugins\HasLogging;
+use Milzer\HttpLogger\Saloon\Contracts\ConfiguresLogging;
+use Milzer\HttpLogger\Saloon\Contracts\ProvidesLogContext;
+use Milzer\HttpLogger\Core\LoggingOptions;
+use Milzer\HttpLogger\Saloon\HasLogging;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
 use Saloon\Contracts\Body\BodyRepository;

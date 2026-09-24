@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Milzer\SaloonLogger\Tests\Support;
+namespace Milzer\HttpLogger\Tests\Support;
 
 use OutOfBoundsException;
 use Psr\Log\AbstractLogger;

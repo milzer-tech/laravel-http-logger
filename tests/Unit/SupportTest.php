@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use Milzer\SaloonLogger\LoggingOptions;
-use Milzer\SaloonLogger\Redaction\Redactor;
-use Milzer\SaloonLogger\SaloonLogger;
-use Milzer\SaloonLogger\Serialization\Formatters\TextFormatter;
-use Milzer\SaloonLogger\Support\MimeType;
-use Milzer\SaloonLogger\Tests\Support\ArrayLogger;
+use Milzer\HttpLogger\Core\HttpLogger;
+use Milzer\HttpLogger\Core\LoggingOptions;
+use Milzer\HttpLogger\Core\Redaction\Redactor;
+use Milzer\HttpLogger\Core\Serialization\Formatters\TextFormatter;
+use Milzer\HttpLogger\Core\Support\MimeType;
+use Milzer\HttpLogger\Tests\Support\ArrayLogger;
 
 it('formats sizes for humans', function (int $bytes, string $expected): void {
     expect(MimeType::humanSize($bytes))->toBe($expected);
@@ -29,7 +29,7 @@ it('leaves strings untouched when there are no key rules', function (): void {
 });
 
 it('returns new instances when changing the logger or options', function (): void {
-    $logger = new SaloonLogger(new ArrayLogger);
+    $logger = new HttpLogger(new ArrayLogger);
     $otherLogger = new ArrayLogger;
     $otherOptions = new LoggingOptions(logHeaders: false);
 

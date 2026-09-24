@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use Milzer\SaloonLogger\LoggingOptions;
-use Milzer\SaloonLogger\Redaction\Redactor;
+use Milzer\HttpLogger\Core\LoggingOptions;
+use Milzer\HttpLogger\Core\Redaction\Redactor;
 
 /**
  * @param  list<string>  $keys

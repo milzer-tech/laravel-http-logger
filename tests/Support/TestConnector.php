@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Milzer\SaloonLogger\Tests\Support;
+namespace Milzer\HttpLogger\Tests\Support;
 
-use Milzer\SaloonLogger\Contracts\ProvidesLogContext;
-use Milzer\SaloonLogger\Plugins\HasLogging;
+use Milzer\HttpLogger\Saloon\Contracts\ProvidesLogContext;
+use Milzer\HttpLogger\Saloon\HasLogging;
 use Saloon\Http\Auth\TokenAuthenticator;
 use Saloon\Http\Connector;
 use Saloon\Http\PendingRequest;
