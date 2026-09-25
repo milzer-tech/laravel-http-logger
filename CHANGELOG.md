@@ -6,6 +6,18 @@ All notable changes to this package are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Logging for Laravel's `Http` facade (and any Guzzle client) with the `HttpLogger::middleware()`
+  Guzzle middleware: register it globally (`Http::globalMiddleware(...)`) or per client
+  (`Http::withMiddleware(...)`), add properties per middleware or per call (`log_context` option),
+  and adjust options such as messages. Logs requests, responses, connection failures (including
+  async and pooled requests and handlers that throw), retries and redirects, shares the trace id
+  with incoming requests, and logs once even if registered twice.
+
+### Security
+- Fixed: the first query parameter of a URL inside free text (e.g. the URL Guzzle appends to
+  connection errors: `... for https://host/?api_key=...`) was not masked since 0.2.0.
+
 ## [0.2.0] - 2026-09-25
 
 ### Security

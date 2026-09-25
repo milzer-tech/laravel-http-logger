@@ -7,6 +7,7 @@ namespace Milzer\HttpLogger\Saloon\Internal;
 use Milzer\HttpLogger\Core\Exchange;
 use Milzer\HttpLogger\Core\Serialization\HttpFields;
 use Milzer\HttpLogger\Core\Serialization\MultipartPart;
+use Milzer\HttpLogger\Core\Serialization\PsrMessageSerializer;
 use Milzer\HttpLogger\Core\Serialization\SerializedBody;
 use Psr\Http\Message\StreamInterface;
 use Saloon\Contracts\Body\BodyRepository;
@@ -56,33 +57,8 @@ final readonly class MessageSerializer
      */
     public function response(Response $response): array
     {
-        $options = $this->exchange->options();
-        $psrRequest = $response->getPsrRequest();
-        $psrResponse = $response->getPsrResponse();
-        $headers = HttpFields::headers($psrResponse->getHeaders());
-
-        $http = [
-            'method' => strtoupper($psrRequest->getMethod()),
-            'url' => HttpFields::url($psrRequest->getUri()),
-            'status' => $response->status(),
-        ];
-
-        if ($options->logHeaders) {
-            $http['headers'] = $this->exchange->redactor()->headers($headers);
-        }
-
-        if ($options->logResponseBody) {
-            $body = $this->exchange->bodies()->fromStream(
-                $psrResponse->getBody(),
-                HttpFields::header($headers, 'Content-Type'),
-                $this->exchange->bodyContext('response'),
-            );
-
-            $http = [...$http, ...$body->toArray()];
-        }
-
         return array_filter([
-            'http' => $http,
+            ...(new PsrMessageSerializer($this->exchange))->response($response->getPsrRequest(), $response->getPsrResponse()),
             'mocked' => $response->isMocked() ?: null,
             'cached' => $response->isCached() ?: null,
         ], static fn (mixed $value): bool => $value !== null);

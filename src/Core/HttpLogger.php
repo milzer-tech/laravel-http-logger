@@ -10,6 +10,7 @@ use Milzer\HttpLogger\Core\Contracts\Writer;
 use Milzer\HttpLogger\Core\Exceptions\MissingLoggerException;
 use Milzer\HttpLogger\Core\Support\Arr;
 use Milzer\HttpLogger\Core\Writers\ImmediateWriter;
+use Milzer\HttpLogger\Guzzle\LogOutgoingRequests;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -56,6 +57,20 @@ final class HttpLogger
     public static function resolveTraceIdUsing(?Closure $resolver): void
     {
         self::$traceIdResolver = $resolver;
+    }
+
+    /**
+     * Guzzle middleware for Laravel's HTTP client (or any Guzzle client):
+     *
+     *   Http::globalMiddleware(HttpLogger::middleware());
+     *   Http::withMiddleware(HttpLogger::middleware(['supplier' => 'ratehawk']))->post(...);
+     *
+     * @param  array<string, mixed>  $context  Added to every entry this middleware writes.
+     * @param  (Closure(LoggingOptions): LoggingOptions)|null  $configure  Adjust options, e.g. messages.
+     */
+    public static function middleware(array $context = [], ?Closure $configure = null): LogOutgoingRequests
+    {
+        return new LogOutgoingRequests($context, $configure);
     }
 
     public static function traceId(): ?string

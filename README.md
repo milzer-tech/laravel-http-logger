@@ -8,7 +8,7 @@
 Log all HTTP traffic of your Laravel app as structured, redacted log entries:
 
 - **Incoming:** requests to your app and its responses.
-- **Outgoing:** calls to external APIs made with [Saloon](https://docs.saloon.dev).
+- **Outgoing:** calls to external APIs made with Laravel's `Http` facade or [Saloon](https://docs.saloon.dev).
 
 Both directions use the same format and share a **trace id**, so one filter shows a whole flow.
 
@@ -28,7 +28,7 @@ composer require milzer/laravel-http-logger
 php artisan vendor:publish --tag=http-logger-config   # optional
 ```
 
-Requires PHP 8.2+, Laravel 11 or 12, and Saloon 4 for outgoing logging.
+Requires PHP 8.2+ and Laravel 11 or 12. Saloon 4 is only needed to log Saloon calls.
 
 ## Usage
 
@@ -40,7 +40,24 @@ Requires PHP 8.2+, Laravel 11 or 12, and Saloon 4 for outgoing logging.
 })
 ```
 
-**Outgoing:** add the plugin to a Saloon connector (or a single request):
+**Outgoing with the `Http` facade:** register the middleware for every call, or only for some:
+
+```php
+use Milzer\HttpLogger\Core\HttpLogger;
+
+// every Http:: call, e.g. in AppServiceProvider::boot()
+Http::globalMiddleware(HttpLogger::middleware());
+
+// or per client, with your own properties
+Http::withMiddleware(HttpLogger::middleware(['supplier' => 'ratehawk']))
+    ->withOptions(['log_context' => ['action' => 'book']])   // per call
+    ->post('https://api.ratehawk.com/v1/bookings', $payload);
+```
+
+`HttpLogger::middleware()` also takes a second argument to change options, e.g. messages:
+`HttpLogger::middleware(['supplier' => 'ratehawk'], fn ($options) => $options->withOutgoingMessages(request: 'checkout-to-{supplier}'))`.
+
+**Outgoing with Saloon:** add the plugin to a connector (or a single request):
 
 ```php
 use Milzer\HttpLogger\Saloon\HasLogging;
@@ -247,7 +264,8 @@ Other options:
 
 - **Writing after the response:** during web requests, entries are written after the response is sent, in the order things happened. `occurred_at` holds the real event time. In artisan commands and queue workers, entries are written immediately. If the PHP process dies before the response is fully finished, that request's entries are lost.
 - **Async Saloon failures:** for `sendAsync()` and pools, connection failures are not logged (a Saloon limitation). Responses are.
-- **Retries:** every retry attempt is logged with its own `correlation_id`.
+- **Retries and redirects:** every retry attempt is logged with its own `correlation_id`. With the `Http` facade, each redirect hop is its own exchange too.
+- **`Http` facade uploads:** multipart request bodies are described (`[multipart body omitted: multipart/form-data, 1.2 MB]`), not read, so uploaded files are never loaded for logging.
 - **Tests:** set `HTTP_LOGGER_THROW_ON_ERROR=true` to surface logger errors, or `HTTP_LOGGER_ENABLED=false` to silence logging.
 
 ## Development

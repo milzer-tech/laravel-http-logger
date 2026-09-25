@@ -64,6 +64,9 @@ it('redacts raw strings', function (string $input, string $expected): void {
     'xml deep inside other elements' => ['<A><B><C a="1"><Token>t</Token></C></B></A>', '<A><B><C a="1"><Token>[REDACTED]</Token></C></B></A>'],
     'xml self-closing is not an element pair' => ['<Hotel/><Name>x</Name>', '<Hotel/><Name>x</Name>'],
     'url credentials' => ['see https://bob:pw@host/path', 'see https://[REDACTED]@host/path'],
+    'first query parameter after a url in text' => ['refused for https://host/v1/?api_key=sk_1', 'refused for https://host/v1/?api_key=%5BREDACTED%5D'],
+    'first query parameter of a url at the start' => ['https://host/?token=abc&lang=de', 'https://host/?token=%5BREDACTED%5D&lang=de'],
+    'free text pair' => ['invalid token=abc123 given', 'invalid token=%5BREDACTED%5D given'],
 ]);
 
 it('checks every segment of flattened field names', function (string $name, bool $sensitive): void {

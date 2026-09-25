@@ -30,8 +30,12 @@ final class Redactor
 
     private const XML_ATTRIBUTE = '/(\s(?:[\w.\-]+:)?([\w.\-]+)\s*=\s*)("[^"]*"|\'[^\']*\')/';
 
-    /** key=value in query strings and free text; values starting with a quote are XML attributes, handled above. */
-    private const FORM_PAIR = '/(^|[?&;\s])([^=&;\s"\'<>]{1,128})=(?!["\'])([^&;\s]*)/';
+    /**
+     * key=value in query strings and free text. Keys never contain "?", "/" or "#", so a URL is
+     * not mistaken for one long key and its first query parameter is still found. Values starting
+     * with a quote are XML attributes, handled above.
+     */
+    private const FORM_PAIR = '/(^|[?&;\s])([^=&;?\/#\s"\'<>]{1,128})=(?!["\'])([^&;\s]*)/';
 
     private readonly ?string $headerPattern;
 
