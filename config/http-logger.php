@@ -84,6 +84,11 @@ return [
         'headers' => true,
         'request_body' => true,
         'response_body' => true,
+
+        // Failures are logged as a masked "error" block (type, message, file, line, trace).
+        // Enable to also pass the raw exception object, e.g. for error-reporting tools.
+        // Its message is NOT masked: URLs in it can contain API keys.
+        'exception_object' => false,
     ],
 
     /*

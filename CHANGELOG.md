@@ -28,6 +28,22 @@ All notable changes to this package are documented here. The format follows
 - Requires Saloon `^4.0` when used (Saloon v3 is affected by CVE-2026-33942, CVE-2026-33182 and
   CVE-2026-33183).
 
+### Security
+- Failure entries and the logger's own error entry log a masked `error` block (type, message,
+  file, line, trace, previous) instead of the raw exception, whose message can contain URLs with
+  API keys (Guzzle appends the request URL, query string included). Opt in to the raw object with
+  `log.exception_object`.
+- Multipart fields with nested names (`payment.card_number`, `payment[card_number]`) are masked
+  when any name segment is sensitive.
+- Sensitive XML elements are masked even when they contain child elements.
+- Credentials in URLs (`https://user:pass@host`) and free-text `key=value` pairs are masked in raw
+  text.
+- Masking fails closed: if a pattern cannot run on a body, the body is replaced by a placeholder
+  instead of being logged unmasked.
+- Incoming bodies are no longer read in full before the size check: `Content-Length` is checked
+  first, otherwise the body is read only up to the limit. Multipart summaries stay within
+  `max_body_bytes` as a whole.
+
 ### Changed
 - Package renamed from `milzer/saloon-logger` to `milzer/laravel-http-logger`
   (namespace `Milzer\HttpLogger`). It is a Laravel package (Laravel 11 or 12); Saloon is optional

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Milzer\HttpLogger\Core;
 
 use Closure;
+use Milzer\HttpLogger\Core\Redaction\Redactor;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -19,19 +20,22 @@ final class Guard
      * @param  array<string, mixed>  $context  Added to the error entry if the callback fails.
      * @param  Closure(): void  $callback
      */
-    public static function run(LoggerInterface $logger, bool $rethrow, array $context, Closure $callback): void
+    public static function run(LoggerInterface $logger, LoggingOptions $options, Redactor $redactor, array $context, Closure $callback): void
     {
         try {
             $callback();
         } catch (Throwable $throwable) {
-            if ($rethrow) {
+            if ($options->throwOnError) {
                 throw $throwable;
             }
 
             try {
-                $logger->error('http-logger failed to write a log entry', [...$context, 'exception' => $throwable]);
+                $logger->error('http-logger failed to write a log entry', [
+                    ...$context,
+                    ...ErrorContext::from($throwable, $redactor, $options->logExceptionObject),
+                ]);
             } catch (Throwable) {
-                error_log(sprintf('[http-logger] %s: %s', $throwable::class, $throwable->getMessage()));
+                error_log(sprintf('[http-logger] %s: %s', $throwable::class, $redactor->string($throwable->getMessage())));
             }
         }
     }

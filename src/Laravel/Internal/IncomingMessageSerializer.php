@@ -114,18 +114,37 @@ final readonly class IncomingMessageSerializer
         $contentType = $request->headers->get('Content-Type');
         $bodies = $this->exchange->bodies();
 
-        $content = $request->getContent();
-        $parsed = $request->request->count() > 0 || $request->files->count() > 0;
-
         // PHP parses multipart bodies into fields and files and discards the raw body.
-        if (MimeType::isMultipart(MimeType::essence($contentType)) || ($content === '' && $parsed)) {
-            return $bodies->fromParts([
-                ...$this->fields($request->request->all()),
-                ...$this->files($request->files->all()),
-            ]);
+        if (MimeType::isMultipart(MimeType::essence($contentType))) {
+            return $this->multipart($request);
         }
 
-        return $bodies->fromString($content, $contentType, $this->exchange->bodyContext('request'));
+        // Never load a body we would not log anyway: trust Content-Length when present, and
+        // otherwise (e.g. chunked uploads) read the stream only up to the limit.
+        $length = $request->headers->get('Content-Length');
+        $tooLarge = is_numeric($length) ? $bodies->tooLargeToRead((int) $length, $contentType) : null;
+
+        if ($tooLarge instanceof SerializedBody) {
+            return $tooLarge;
+        }
+
+        $body = $bodies->fromResource($request->getContent(true), $contentType, $this->exchange->bodyContext('request'));
+
+        // No raw body but parsed input: e.g. form posts whose input was already consumed.
+        if ($body->value === null && ($request->request->count() > 0 || $request->files->count() > 0)) {
+            return $this->multipart($request);
+        }
+
+        return $body;
+    }
+
+    private function multipart(Request $request): SerializedBody
+    {
+        return $this->exchange->bodies()->fromParts([
+            // Masked while still nested, so a sensitive parent key hides all of its children.
+            ...$this->fields($this->exchange->redactor()->array($request->request->all())),
+            ...$this->files($request->files->all()),
+        ]);
     }
 
     private function responseBody(Response $response, ?string $contentType): SerializedBody

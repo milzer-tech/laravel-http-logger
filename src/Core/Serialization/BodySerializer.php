@@ -134,25 +134,38 @@ final readonly class BodySerializer
 
     /**
      * Multipart bodies are summarised part by part: text fields are shown (and redacted),
-     * files are described instead of dumped.
+     * files are described instead of dumped. The summary as a whole stays within the body
+     * limit; parts beyond it are counted, not logged.
      *
      * @param  list<MultipartPart>  $parts
      */
     public function fromParts(array $parts): SerializedBody
     {
-        return new SerializedBody(array_map(function (MultipartPart $part): array {
-            $contents = match (true) {
-                $this->redactor->isSensitiveKey($part->name) => $this->redactor->mask(),
-                $part->value !== null => $this->truncate($this->redactor->string($part->value)),
-                default => sprintf('[file omitted%s]', $part->size === null ? '' : ': '.MimeType::humanSize($part->size)),
-            };
+        $summaries = [];
+        $size = 0;
 
-            return array_filter([
-                'name' => $part->name,
-                'filename' => $part->filename,
-                'contents' => $contents,
-            ], static fn (?string $value): bool => $value !== null);
-        }, $parts));
+        foreach ($parts as $index => $part) {
+            $summary = $this->part($part);
+            $size += strlen((string) json_encode($summary));
+
+            if ($this->maxBodyBytes !== null && $size > $this->maxBodyBytes && $summaries !== []) {
+                $summaries[] = ['name' => '…', 'contents' => sprintf('[%d more parts omitted]', count($parts) - $index)];
+
+                break;
+            }
+
+            $summaries[] = $summary;
+        }
+
+        return new SerializedBody($summaries);
+    }
+
+    /**
+     * A body of this size will not be read at all; returns its description, or null if it fits.
+     */
+    public function tooLargeToRead(int $size, ?string $contentType): ?SerializedBody
+    {
+        return $size > $this->readLimit ? new SerializedBody($this->tooLarge($size, $contentType)) : null;
     }
 
     /**
@@ -161,6 +174,25 @@ final readonly class BodySerializer
     public function describe(string $description): SerializedBody
     {
         return new SerializedBody($description);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function part(MultipartPart $part): array
+    {
+        $contents = match (true) {
+            // Flattened names like "payment.card_number" are checked segment by segment.
+            $this->redactor->isSensitiveName($part->name) => $this->redactor->mask(),
+            $part->value !== null => $this->truncate($this->redactor->string($part->value)),
+            default => sprintf('[file omitted%s]', $part->size === null ? '' : ': '.MimeType::humanSize($part->size)),
+        };
+
+        return array_filter([
+            'name' => $part->name,
+            'filename' => $part->filename,
+            'contents' => $contents,
+        ], static fn (?string $value): bool => $value !== null);
     }
 
     private function formatterFor(string $mimeType, string $body): BodyFormatter

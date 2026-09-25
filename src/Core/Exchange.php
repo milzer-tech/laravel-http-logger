@@ -52,7 +52,7 @@ final class Exchange
         private readonly ?string $traceId = null,
     ) {
         $this->correlationId = bin2hex(random_bytes(8));
-        $this->redactor = new Redactor($options->redactHeaders, $options->redactKeys, $options->redactionMask);
+        $this->redactor = Redactor::fromOptions($options);
         $this->bodies = new BodySerializer(
             $this->redactor,
             $options->maxBodyBytes,
@@ -157,12 +157,7 @@ final class Exchange
 
         $this->dispatch($this->options->failureLevel, $this->options->outgoingFailureMessage, $parts, [
             'response_time_in_seconds' => $this->elapsed(),
-            'error' => [
-                'type' => $cause::class,
-                'message' => $cause->getMessage(),
-                'code' => $cause->getCode(),
-            ],
-            'exception' => $cause,
+            ...ErrorContext::from($cause, $this->redactor, $this->options->logExceptionObject),
         ]);
     }
 
@@ -171,7 +166,7 @@ final class Exchange
      */
     public function guard(Closure $callback): void
     {
-        Guard::run($this->logger, $this->options->throwOnError, [
+        Guard::run($this->logger, $this->options, $this->redactor, [
             'direction' => $this->direction->value,
             'correlation_id' => $this->correlationId,
         ], $callback);

@@ -60,4 +60,40 @@ it('redacts raw strings', function (string $input, string $expected): void {
     'xml attribute' => ['<Auth user="u" token=\'t\'/>', '<Auth user="u" token=\'[REDACTED]\'/>'],
     'form' => ['a=1&password=x&b=2', 'a=1&password=%5BREDACTED%5D&b=2'],
     'untouched' => ['<Hotel>Palma</Hotel>', '<Hotel>Palma</Hotel>'],
+    'xml with children' => ['<password><value>hunter2</value></password>', '<password>[REDACTED]</password>'],
+    'xml deep inside other elements' => ['<A><B><C a="1"><Token>t</Token></C></B></A>', '<A><B><C a="1"><Token>[REDACTED]</Token></C></B></A>'],
+    'xml self-closing is not an element pair' => ['<Hotel/><Name>x</Name>', '<Hotel/><Name>x</Name>'],
+    'url credentials' => ['see https://bob:pw@host/path', 'see https://[REDACTED]@host/path'],
 ]);
+
+it('checks every segment of flattened field names', function (string $name, bool $sensitive): void {
+    expect(redactor()->isSensitiveName($name))->toBe($sensitive);
+})->with([
+    ['payment.card_number', true],
+    ['payment[card_number]', true],
+    ['guests[0][passport]', false],
+    ['client_secret', true],
+    ['guests[0][name]', false],
+]);
+
+it('masks url credentials even without key rules', function (): void {
+    expect((new Redactor([], []))->string('https://bob:pw@host'))->toBe('https://[REDACTED]@host');
+});
+
+it('fails closed when a pattern cannot run', function (): void {
+    $jit = ini_get('pcre.jit');
+    $limit = ini_get('pcre.backtrack_limit');
+    ini_set('pcre.jit', '0');
+    ini_set('pcre.backtrack_limit', '1');
+
+    try {
+        expect(redactor()->string('<a><password>secret</password></a>'))->toBe(Redactor::UNREDACTABLE);
+    } finally {
+        ini_set('pcre.jit', (string) $jit);
+        ini_set('pcre.backtrack_limit', (string) $limit);
+    }
+});
+
+it('returns empty text unchanged, e.g. an exception without a message', function (): void {
+    expect(redactor()->string(''))->toBe('');
+});

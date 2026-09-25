@@ -62,7 +62,7 @@ A client calls `POST /api/bookings` and your app calls a supplier while handling
 | 3 | `outgoing-response` | info / warning (4xx) / error (5xx) |
 | 4 | `incoming-response` | info / warning (4xx) / error (5xx) |
 
-If an outgoing call gets no response (timeout, DNS, connection refused), you get `outgoing-failure` (error) with the exception instead of #3.
+If an outgoing call gets no response (timeout, DNS, connection refused), you get `outgoing-failure` (error) instead of #3. It carries a masked `error` block (type, message, file, line, trace), not the raw exception, because exception messages can contain URLs with API keys. Set `log.exception_object` to `true` if you also need the raw exception object.
 
 Entry #3 looks like this:
 

@@ -24,7 +24,7 @@ beforeEach(function (): void {
 
     Route::middleware('http-logger')->group(function (): void {
         Route::post('/bookings', fn (): array => ['booking_id' => 'B-1', 'access_token' => 'tok'])->name('bookings.store');
-        Route::get('/search', fn (): string => 'ok');
+        Route::match(['GET', 'PUT'], '/search', fn (): string => 'ok');
         Route::get('/fail', fn (): never => abort(503));
         Route::get('/missing', fn (): never => abort(404));
         Route::get('/stream', fn (): StreamedResponse => response()->stream(function (): void {
@@ -137,6 +137,55 @@ it('reads multipart bodies sent with a multipart content type', function (): voi
     laravel()->call('POST', '/upload', ['title' => 'Voucher'], [], [], ['CONTENT_TYPE' => 'multipart/form-data; boundary=x'])->assertOk();
 
     expect(testLog()->record(0)->get('http.body'))->toBe([['name' => 'title', 'contents' => 'Voucher']]);
+});
+
+it('masks nested multipart fields', function (): void {
+    laravel()->post('/upload', [
+        'payment' => ['holder' => 'Jane', 'card_number' => '4111111111111111'],
+        'client_secret' => ['value' => 'shh'],
+        'file' => UploadedFile::fake()->create('a.pdf', 1),
+    ])->assertOk();
+
+    expect(testLog()->record(0)->get('http.body'))->toBe([
+        ['name' => 'payment.holder', 'contents' => 'Jane'],
+        ['name' => 'payment.card_number', 'contents' => '[REDACTED]'],
+        ['name' => 'client_secret', 'contents' => '[REDACTED]'],
+        ['name' => 'file', 'filename' => 'a.pdf', 'contents' => '[file omitted: 1 KB]'],
+    ]);
+});
+
+it('keeps multipart summaries within the body limit', function (): void {
+    app()->instance(HttpLogger::class, new HttpLogger(testLog(), new LoggingOptions(maxBodyBytes: 200, throwOnError: true)));
+
+    $fields = [];
+    for ($i = 0; $i < 50; $i++) {
+        $fields['field'.$i] = str_repeat('x', 20);
+    }
+
+    laravel()->post('/upload', $fields)->assertOk();
+
+    $body = testLog()->record(0)->get('http.body');
+    $marker = is_array($body) ? array_pop($body) : null;
+
+    expect($marker)->toBeArray()
+        ->and(is_array($marker) ? $marker['contents'] : null)->toBe(sprintf('[%d more parts omitted]', 50 - count((array) $body)))
+        ->and(strlen((string) json_encode($body)))->toBeLessThanOrEqual(200);
+});
+
+it('does not read bodies whose Content-Length exceeds the limit', function (): void {
+    app()->instance(HttpLogger::class, new HttpLogger(testLog(), new LoggingOptions(maxParseBytes: 100, throwOnError: true)));
+
+    laravel()->call('PUT', '/search', [], [], [], ['CONTENT_TYPE' => 'text/plain', 'CONTENT_LENGTH' => '5000000'], 'small');
+
+    expect(testLog()->record(0)->get('http.body'))->toBe('[body omitted: 4.8 MB larger than the 100 B limit, text/plain]');
+});
+
+it('reads bodies without Content-Length only up to the limit', function (): void {
+    app()->instance(HttpLogger::class, new HttpLogger(testLog(), new LoggingOptions(maxParseBytes: 100, throwOnError: true)));
+
+    laravel()->call('PUT', '/search', [], [], [], ['CONTENT_TYPE' => 'text/plain'], str_repeat('a', 500));
+
+    expect(testLog()->record(0)->get('http.body'))->toBe('[body omitted: stream larger than the 100 B limit, text/plain]');
 });
 
 it('describes streamed responses', function (): void {

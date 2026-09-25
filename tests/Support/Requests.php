@@ -242,3 +242,43 @@ final class MultipartFilesRequest extends Request implements HasBody
         ];
     }
 }
+
+final class NestedMultipartRequest extends Request implements HasBody
+{
+    use HasMultipartBody;
+
+    protected Method $method = Method::POST;
+
+    public function resolveEndpoint(): string
+    {
+        return '/payments';
+    }
+
+    /**
+     * @return list<MultipartValue>
+     */
+    protected function defaultBody(): array
+    {
+        return [
+            new MultipartValue('payment[holder]', 'Jane Doe'),
+            new MultipartValue('payment[card_number]', '4111111111111111'),
+        ];
+    }
+}
+
+final class NestedXmlRequest extends Request implements HasBody
+{
+    use HasXmlBody;
+
+    protected Method $method = Method::POST;
+
+    public function resolveEndpoint(): string
+    {
+        return '/soap';
+    }
+
+    protected function defaultBody(): string
+    {
+        return '<Envelope><password><value>hunter2</value></password><Hotel>H1</Hotel></Envelope>';
+    }
+}

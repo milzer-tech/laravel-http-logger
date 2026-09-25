@@ -192,7 +192,7 @@ it('omits bodies larger than the limit', function (): void {
         ->toBe('[body omitted: 50 B larger than the 10 B limit, text/plain]');
 });
 
-it('logs fatal connection errors with the underlying exception', function (): void {
+it('logs fatal connection errors as a masked error description', function (): void {
     $connector = connector(MockResponse::make()->throw(
         fn (PendingRequest $pendingRequest): FatalRequestException => new FatalRequestException(new RuntimeException('cURL error 28: timed out'), $pendingRequest),
     ));
@@ -204,8 +204,12 @@ it('logs fatal connection errors with the underlying exception', function (): vo
     expect($failure->level)->toBe(LogLevel::ERROR)
         ->and($failure->message)->toBe('outgoing-failure')
         ->and($failure->get('http'))->toBe(['method' => 'GET', 'url' => 'https://api.supplier.test/v1/bookings/42'])
-        ->and($failure->get('error'))->toBe(['type' => RuntimeException::class, 'message' => 'cURL error 28: timed out', 'code' => 0])
-        ->and($failure->get('exception'))->toBeInstanceOf(RuntimeException::class)
+        ->and($failure->get('error'))->toMatchArray(['type' => RuntimeException::class, 'message' => 'cURL error 28: timed out', 'code' => 0])
+        ->and($failure->get('error.file'))->toBeString()
+        ->and($failure->get('error.line'))->toBeInt()
+        ->and($failure->get('error.trace'))->toBeArray()
+        ->and($failure->has('error.previous'))->toBeFalse()
+        ->and($failure->has('exception'))->toBeFalse()
         ->and($failure->get('correlation_id'))->toBe(testLog()->record(0)->get('correlation_id'));
 });
 
@@ -266,12 +270,11 @@ it('never breaks the HTTP call when logging fails', function (): void {
 
     $response = connector()->send(new LoggedRequest(fn (): LoggingOptions => throw new RuntimeException('bad config')));
 
-    $exception = testLog()->record(0)->get('exception');
-
     expect($response->status())->toBe(200)
         ->and(testLog()->record(0)->message)->toBe('http-logger failed to write a log entry')
-        ->and($exception)->toBeInstanceOf(RuntimeException::class)
-        ->and($exception instanceof RuntimeException ? $exception->getMessage() : null)->toBe('bad config');
+        ->and(testLog()->record(0)->get('error.type'))->toBe(RuntimeException::class)
+        ->and(testLog()->record(0)->get('error.message'))->toBe('bad config')
+        ->and(testLog()->record(0)->has('exception'))->toBeFalse();
 });
 
 it('throws a helpful exception when no logger is configured', function (): void {

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Milzer\HttpLogger\Core\Redaction;
 
+use Milzer\HttpLogger\Core\LoggingOptions;
+use UnexpectedValueException;
+
 /**
  * Masks sensitive values in headers, structured bodies and raw (XML/JSON/form) strings.
  *
@@ -12,13 +15,23 @@ namespace Milzer\HttpLogger\Core\Redaction;
  */
 final class Redactor
 {
+    /**
+     * Returned instead of a body whose masking could not run (e.g. PCRE limits on a huge body):
+     * logging nothing is safer than logging something unmasked.
+     */
+    public const UNREDACTABLE = '[body omitted: could not be redacted safely]';
+
     private const JSON_PAIR = '/"((?:[^"\\\\]|\\\\.){1,128})"(\s*:\s*)("(?:[^"\\\\]|\\\\.)*"|-?\d[\d.eE+\-]*|true|false|null)/';
 
-    private const XML_ELEMENT = '/<((?:[\w.\-]+:)?([\w.\-]+))(\s[^<>]*)?>(<!\[CDATA\[.*?\]\]>|[^<]*)<\/\1\s*>/s';
+    /** An element with its content (text, CDATA or child elements) up to its closing tag; not self-closing. */
+    private const XML_ELEMENT = '/<((?:[\w.\-]+:)?([\w.\-]+))(\s[^<>]*)?(?<!\/)>(.*?)<\/\1\s*>/s';
+
+    private const URL_CREDENTIALS = '#\b([a-z][a-z0-9+.\-]*://)[^\s/?\#@"\'<>]+@#i';
 
     private const XML_ATTRIBUTE = '/(\s(?:[\w.\-]+:)?([\w.\-]+)\s*=\s*)("[^"]*"|\'[^\']*\')/';
 
-    private const FORM_PAIR = '/(^|[?&;])([^=&;\s]{1,128})=([^&;\s]*)/';
+    /** key=value in query strings and free text; values starting with a quote are XML attributes, handled above. */
+    private const FORM_PAIR = '/(^|[?&;\s])([^=&;\s"\'<>]{1,128})=(?!["\'])([^&;\s]*)/';
 
     private readonly ?string $headerPattern;
 
@@ -72,33 +85,61 @@ final class Redactor
         return $data;
     }
 
+    public static function fromOptions(LoggingOptions $options): self
+    {
+        return new self($options->redactHeaders, $options->redactKeys, $options->redactionMask);
+    }
+
     /**
-     * Best-effort masking inside raw payloads that could not be decoded into an array:
-     * XML elements and attributes, JSON "key": value pairs and form-encoded key=value pairs.
+     * Best-effort masking inside raw text that could not be decoded into an array: credentials in
+     * URLs, XML elements (including ones with child elements) and attributes, JSON "key": value
+     * pairs and form-encoded key=value pairs.
      */
     public function string(string $body): string
     {
-        if ($this->keyPattern === null || $body === '') {
+        if ($body === '') {
             return $body;
         }
 
-        $replacements = [
-            self::XML_ELEMENT => $this->replaceXmlElement(...),
-            self::XML_ATTRIBUTE => $this->replaceXmlAttribute(...),
-            self::JSON_PAIR => $this->replaceJsonPair(...),
-            self::FORM_PAIR => $this->replaceFormPair(...),
-        ];
+        try {
+            $body = $this->replace(self::URL_CREDENTIALS, $this->replaceUrlCredentials(...), $body);
 
-        foreach ($replacements as $pattern => $callback) {
-            $body = preg_replace_callback($pattern, $callback, $body) ?? $body;
+            if ($this->keyPattern === null) {
+                return $body;
+            }
+
+            $body = $this->replace(self::XML_ELEMENT, $this->replaceXmlElement(...), $body);
+            $body = $this->replace(self::XML_ATTRIBUTE, $this->replaceXmlAttribute(...), $body);
+            $body = $this->replace(self::JSON_PAIR, $this->replaceJsonPair(...), $body);
+
+            return $this->replace(self::FORM_PAIR, $this->replaceFormPair(...), $body);
+        } catch (UnexpectedValueException) {
+            return self::UNREDACTABLE;
         }
-
-        return $body;
     }
 
     public function isSensitiveKey(string $key): bool
     {
         return $this->cache[$key] ??= $this->matches($this->keyPattern, $key);
+    }
+
+    /**
+     * For flattened field names such as "payment.card_number" or "payment[card_number]":
+     * sensitive when the whole name or any of its segments is.
+     */
+    public function isSensitiveName(string $name): bool
+    {
+        if ($this->isSensitiveKey($name)) {
+            return true;
+        }
+
+        foreach (preg_split('/[.\[\]]+/', $name, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $segment) {
+            if ($this->isSensitiveKey($segment)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function mask(): string
@@ -107,15 +148,44 @@ final class Redactor
     }
 
     /**
+     * @param  callable(array<int|string, string>): string  $callback
+     *
+     * @throws UnexpectedValueException When the pattern cannot run, so callers can fail closed.
+     */
+    private function replace(string $pattern, callable $callback, string $subject): string
+    {
+        return preg_replace_callback($pattern, $callback, $subject)
+            ?? throw new UnexpectedValueException(preg_last_error_msg());
+    }
+
+    /**
+     * @param  array<int|string, string>  $m  [whole, scheme://]
+     */
+    private function replaceUrlCredentials(array $m): string
+    {
+        return $m[1].$this->mask.'@';
+    }
+
+    /**
+     * A sensitive element loses its whole content, child elements included. Other elements are
+     * searched recursively, so a sensitive element anywhere inside them is still found.
+     *
      * @param  array<int|string, string>  $m  [whole, qualified name, local name, attributes, contents]
      */
     private function replaceXmlElement(array $m): string
     {
-        if (! $this->isSensitiveKey($m[2])) {
+        $open = '<'.$m[1].$m[3].'>';
+        $close = '</'.$m[1].'>';
+
+        if ($this->isSensitiveKey($m[2])) {
+            return $open.htmlspecialchars($this->mask, ENT_XML1).$close;
+        }
+
+        if (! str_contains($m[4], '<')) {
             return $m[0];
         }
 
-        return '<'.$m[1].($m[3] ?? '').'>'.htmlspecialchars($this->mask, ENT_XML1).'</'.$m[1].'>';
+        return $open.$this->replace(self::XML_ELEMENT, $this->replaceXmlElement(...), $m[4]).$close;
     }
 
     /**

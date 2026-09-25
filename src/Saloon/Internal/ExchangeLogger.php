@@ -8,6 +8,7 @@ use Milzer\HttpLogger\Core\Direction;
 use Milzer\HttpLogger\Core\Exchange;
 use Milzer\HttpLogger\Core\Guard;
 use Milzer\HttpLogger\Core\HttpLogger;
+use Milzer\HttpLogger\Core\Redaction\Redactor;
 use Milzer\HttpLogger\Core\Support\Arr;
 use Milzer\HttpLogger\Saloon\Contracts\ConfiguresLogging;
 use Milzer\HttpLogger\Saloon\Contracts\ProvidesLogContext;
@@ -31,7 +32,9 @@ final class ExchangeLogger
 
     public function logRequest(PendingRequest $pendingRequest): void
     {
-        Guard::run($this->httpLogger->logger(), $this->httpLogger->options()->throwOnError, [], function () use ($pendingRequest): void {
+        $options = $this->httpLogger->options();
+
+        Guard::run($this->httpLogger->logger(), $options, Redactor::fromOptions($options), [], function () use ($pendingRequest): void {
             // Booting here rather than in the plugin means connector/request callbacks
             // see the fully built PendingRequest (merged body, headers and auth).
             $exchange = $this->boot($pendingRequest);
